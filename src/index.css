@@ -2,17 +2,19 @@
 
 /* ─── Custom Properties ─── */
 :root {
-  --bg: #F5F6FA;
+  --bg: #F3F4F8;
   --surface: #FFFFFF;
-  --surface-h: #F0F2F8;
-  --border: #E4E8F1;
-  --border-l: #EEF0F6;
-  --text: #161921;
-  --text-s: #5A6178;
-  --text-m: #99A0B4;
-  --accent: #3B82F6;
-  --accent-l: #EBF2FF;
-  --accent-d: #2563EB;
+  --surface-h: #ECEEF7;
+  --border: #E2E5F0;
+  --border-l: #ECEEF7;
+  --text: #161945;
+  --text-s: #526080;
+  --text-m: #8A96B4;
+  --accent: #1D2C5C;
+  --accent-l: #ECEEF7;
+  --accent-d: #0F1B3D;
+  --gold: #FFAA01;
+  --gold-l: #FFF5D6;
   --green: #10B981;
   --green-l: #ECFDF5;
   --red: #EF4444;
@@ -22,9 +24,9 @@
   --r: 16px;
   --rs: 10px;
   --rx: 6px;
-  --sh: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02);
-  --sh-m: 0 4px 16px rgba(0,0,0,0.05), 0 1px 3px rgba(0,0,0,0.03);
-  --font: 'DM Sans', -apple-system, sans-serif;
+  --sh: 0 1px 3px rgba(22,25,69,0.06), 0 1px 2px rgba(22,25,69,0.03);
+  --sh-m: 0 4px 16px rgba(22,25,69,0.08), 0 1px 3px rgba(22,25,69,0.04);
+  --font: 'Inter', -apple-system, sans-serif;
   --mono: 'JetBrains Mono', monospace;
 }
 

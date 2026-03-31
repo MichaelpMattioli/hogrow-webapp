@@ -4,7 +4,7 @@ import ToggleGroup from '@/components/ui/ToggleGroup';
 import ChartTooltip from './ChartTooltip';
 import type { KpiDiario } from '@/data/types';
 
-const MONTH_COLORS = ['#3B82F6', '#10B981', '#8B5CF6', '#F59E0B', '#EF4444', '#EC4899', '#06B6D4', '#F97316', '#6366F1', '#14B8A6', '#E11D48', '#84CC16'];
+const MONTH_COLORS = ['#1D2C5C', '#FFAA01', '#10B981', '#8B5CF6', '#EF4444', '#EC4899', '#06B6D4', '#F97316', '#6366F1', '#14B8A6', '#E11D48', '#84CC16'];
 const MONTH_NAMES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 
 function monthLabel(ym: string): string {
