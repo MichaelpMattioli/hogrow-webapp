@@ -137,11 +137,9 @@ export default function ClienteDetalhe() {
     <div className="fade-in">
       {/* Back */}
       <button
-        className="flex items-center gap-1.5 text-[13px] font-medium mb-5 transition-colors duration-150"
+        className="flex items-center gap-1.5 text-[13px] font-medium mb-5 transition-colors duration-150 hover:text-[var(--accent)]"
         style={{ color: 'var(--text-m)' }}
         onClick={() => navigate('/clientes')}
-        onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent)'; }}
-        onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-m)'; }}
       >
         <ArrowLeft size={14} />
         Voltar para clientes
@@ -149,7 +147,7 @@ export default function ClienteDetalhe() {
 
       {/* Header */}
       <div
-        className="flex justify-between items-center rounded-[var(--rx)]"
+        className="flex justify-between items-center rounded-[var(--rs)]"
         style={{ borderLeft: `4px solid ${cfg.color}`, padding: '14px 18px', background: 'var(--surface)', marginBottom: 40 }}
       >
         <div>
@@ -163,11 +161,9 @@ export default function ClienteDetalhe() {
         {/* 3-dot menu */}
         <div ref={menuRef} style={{ position: 'relative' }}>
           <button
-            className="flex items-center justify-center rounded-[var(--rx)] transition-colors duration-150"
+            className="flex items-center justify-center rounded-[var(--rx)] transition-colors duration-150 hover:bg-[var(--surface-h)]"
             style={{ width: 32, height: 32, background: menuOpen ? 'var(--surface-h)' : 'transparent' }}
             onClick={() => setMenuOpen(o => !o)}
-            onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-h)'; }}
-            onMouseLeave={(e) => { if (!menuOpen) e.currentTarget.style.background = 'transparent'; }}
           >
             <MoreVertical size={16} style={{ color: 'var(--text-m)' }} />
           </button>
@@ -181,11 +177,9 @@ export default function ClienteDetalhe() {
               }}
             >
               <button
-                className="flex items-center gap-2 w-full text-left text-[12px] font-medium transition-colors duration-100"
+                className="flex items-center gap-2 w-full text-left text-[12px] font-medium transition-colors duration-100 hover:bg-[var(--surface-h)]"
                 style={{ padding: '7px 14px', color: 'var(--text)' }}
                 onClick={() => { setActiveTab('editar'); setMenuOpen(false); }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-h)'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
               >
                 <Pencil size={13} style={{ color: 'var(--text-m)' }} />
                 Editar Hotel
@@ -198,11 +192,9 @@ export default function ClienteDetalhe() {
       {activeTab === 'editar' ? (
         <>
           <button
-            className="flex items-center gap-1.5 text-[13px] font-medium mb-5 transition-colors duration-150"
+            className="flex items-center gap-1.5 text-[13px] font-medium mb-5 transition-colors duration-150 hover:text-[var(--accent)]"
             style={{ color: 'var(--text-m)' }}
             onClick={() => setActiveTab('dashboard')}
-            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-m)'; }}
           >
             <ArrowLeft size={14} />
             Voltar para dashboard
@@ -234,11 +226,9 @@ export default function ClienteDetalhe() {
         </button>
         {selectedMeses.length > 0 && (
           <button
-            className="text-[10.5px] font-medium transition-colors duration-150"
+            className="text-[10.5px] font-medium transition-colors duration-150 hover:text-[var(--accent)]"
             style={{ color: 'var(--text-m)' }}
             onClick={() => setSelectedMeses([])}
-            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-m)'; }}
           >
             ✕ Limpar
           </button>
@@ -267,11 +257,9 @@ export default function ClienteDetalhe() {
             }}
           >
             <button
-              className="flex items-center gap-2 w-full text-left text-[12px] font-medium transition-colors duration-100"
+              className="flex items-center gap-2 w-full text-left text-[12px] font-medium transition-colors duration-100 hover:bg-[var(--surface-h)]"
               style={{ padding: '7px 14px', color: selectedMeses.length === 0 ? 'var(--accent)' : 'var(--text-m)' }}
               onClick={() => { setSelectedMeses([]); setFilterOpen(false); }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-h)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
             >
               {selectedMeses.length === 0 && <Check size={13} style={{ color: 'var(--accent)' }} />}
               {selectedMeses.length > 0 && <span style={{ width: 13 }} />}
@@ -285,11 +273,9 @@ export default function ClienteDetalhe() {
               return (
                 <button
                   key={m}
-                  className="flex items-center gap-2 w-full text-left text-[12px] font-medium transition-colors duration-100"
+                  className="flex items-center gap-2 w-full text-left text-[12px] font-medium transition-colors duration-100 hover:bg-[var(--surface-h)]"
                   style={{ padding: '7px 14px', color: checked ? 'var(--text)' : 'var(--text-m)' }}
                   onClick={() => toggleMonth(m)}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-h)'; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
                 >
                   <span
                     className="flex items-center justify-center rounded-[3px]"
@@ -310,7 +296,7 @@ export default function ClienteDetalhe() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-5 gap-5" style={{ marginBottom: 40 }}>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-5" style={{ marginBottom: 40 }}>
         <KpiCard title="UHs TT" value={aggKpis.uhsTT} delta={0} deltaLabel="" icon={BedDouble} delay={0} />
         <KpiCard title="Receita" value={aggKpis.receita} prefix="R$ " delta={0} deltaLabel="" icon={BarChart3} delay={60} />
         <KpiCard title="DM C/C TT" value={aggKpis.dmCcTT} prefix="R$ " delta={0} deltaLabel="" icon={DollarSign} delay={120} />
@@ -319,7 +305,7 @@ export default function ClienteDetalhe() {
       </div>
 
       {/* Charts */}
-      <div className="grid grid-cols-2 gap-6" style={{ marginBottom: 40 }}>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" style={{ marginBottom: 40 }}>
         <OccupancyChart data={latestKpis} selectedMonths={selectedMeses} />
         <RevenueChart data={latestKpis} selectedMonths={selectedMeses} />
       </div>
@@ -330,7 +316,7 @@ export default function ClienteDetalhe() {
       </div>
 
       {/* Table + Insights */}
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="col-span-2">
           <KpiTable data={filteredKpis} allData={filteredAllKpis} />
         </div>

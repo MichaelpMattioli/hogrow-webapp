@@ -42,7 +42,7 @@ export default function ClientListCard({ hotel, onClick, delay = 0 }: ClientList
 
   return (
     <button
-      className="card-in w-full text-left transition-all duration-200"
+      className="card-in w-full text-left transition-all duration-200 hover:border-[var(--accent)] hover:shadow-[var(--sh-m)] hover:-translate-y-px"
       style={{
         position: 'relative',
         padding: '16px 22px 16px 26px',
@@ -53,16 +53,6 @@ export default function ClientListCard({ hotel, onClick, delay = 0 }: ClientList
         overflow: 'hidden',
       }}
       onClick={onClick}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.borderColor = 'var(--accent)';
-        e.currentTarget.style.boxShadow = 'var(--sh-m)';
-        e.currentTarget.style.transform = 'translateY(-1px)';
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.borderColor = 'var(--border)';
-        e.currentTarget.style.boxShadow = 'none';
-        e.currentTarget.style.transform = 'translateY(0)';
-      }}
     >
       {/* Color bar */}
       <div
@@ -131,7 +121,7 @@ export default function ClientListCard({ hotel, onClick, delay = 0 }: ClientList
         {kpis.map((k) => (
           <div key={k.label}>
             <div
-              className="text-[9px] font-semibold uppercase"
+              className="text-[11px] font-semibold uppercase"
               style={{ color: 'var(--text-s)', letterSpacing: '0.5px', marginBottom: 2 }}
             >
               {k.label}

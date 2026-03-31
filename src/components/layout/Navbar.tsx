@@ -1,4 +1,4 @@
-import { Hotel, LayoutDashboard, Search, Bell, ArrowLeft, ChevronRight } from 'lucide-react';
+import { LayoutDashboard, Search, Bell, ArrowLeft, ChevronRight } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 interface NavbarProps {
@@ -22,22 +22,17 @@ export default function Navbar({ breadcrumbName }: NavbarProps) {
         height: 56,
         background: 'var(--surface)',
         borderBottom: '1px solid var(--border)',
+        boxShadow: 'var(--sh)',
       }}
     >
       <div className="flex items-center gap-6">
         {/* Brand */}
-        <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate('/')}>
-          <div
-            className="flex items-center justify-center rounded-lg text-white"
-            style={{
-              width: 30,
-              height: 30,
-              background: 'linear-gradient(135deg, #3B82F6, #6366F1)',
-            }}
-          >
-            <Hotel size={18} />
-          </div>
-          <span className="text-[15px] font-bold" style={{ letterSpacing: '-0.3px' }}>HoGrow</span>
+        <div className="flex items-center cursor-pointer" onClick={() => navigate('/')}>
+          <img
+            src="/logo-hogrow-navy.svg"
+            alt="HoGrow"
+            style={{ height: 28, width: 'auto' }}
+          />
         </div>
 
         {/* Tabs */}
@@ -48,25 +43,15 @@ export default function Navbar({ breadcrumbName }: NavbarProps) {
             return (
               <button
                 key={t.id}
-                className="flex items-center gap-1.5 rounded-[var(--rx)] text-[13px] font-medium transition-all duration-150"
+                className={`flex items-center gap-1.5 text-[13px] font-medium transition-all duration-150 ${!isActive ? 'hover:text-[var(--text)]' : ''}`}
                 style={{
                   padding: '8px 14px',
-                  color: isActive ? 'var(--accent-d)' : 'var(--text-s)',
-                  background: isActive ? 'var(--accent-l)' : 'transparent',
+                  color: isActive ? 'var(--accent)' : 'var(--text-s)',
+                  borderBottom: isActive ? '2px solid var(--gold)' : '2px solid transparent',
+                  borderRadius: 0,
+                  marginBottom: -1,
                 }}
                 onClick={() => navigate(t.id)}
-                onMouseEnter={(e) => {
-                  if (!isActive) {
-                    e.currentTarget.style.background = 'var(--surface-h)';
-                    e.currentTarget.style.color = 'var(--text)';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!isActive) {
-                    e.currentTarget.style.background = 'transparent';
-                    e.currentTarget.style.color = 'var(--text-s)';
-                  }
-                }}
               >
                 <Icon size={16} />
                 {t.label}
@@ -76,26 +61,17 @@ export default function Navbar({ breadcrumbName }: NavbarProps) {
 
           {/* Breadcrumb */}
           {breadcrumbName && (
-            <div
-              className="flex items-center gap-1 rounded-[var(--rx)] text-[13px] font-medium"
-              style={{
-                padding: '8px 14px',
-                color: 'var(--accent-d)',
-                background: 'var(--accent-l)',
-              }}
-            >
+            <div className="flex items-center gap-1 text-[13px] font-medium">
               <button
-                className="flex items-center gap-1 text-[13px] font-medium transition-colors duration-150"
+                className="flex items-center gap-1 text-[13px] font-medium transition-colors duration-150 hover:text-[var(--accent)]"
                 style={{ color: 'var(--text-m)' }}
                 onClick={() => navigate('/')}
-                onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent)'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-m)'; }}
               >
                 <ArrowLeft size={14} />
                 Home
               </button>
               <ChevronRight size={12} style={{ color: 'var(--text-m)' }} />
-              <span>{breadcrumbName}</span>
+              <span style={{ color: 'var(--accent)', fontWeight: 600 }}>{breadcrumbName}</span>
             </div>
           )}
         </div>
@@ -116,20 +92,12 @@ export default function Navbar({ breadcrumbName }: NavbarProps) {
           <span>Buscar hotel...</span>
         </div>
         <button
-          className="relative flex items-center justify-center rounded-full border transition-all duration-150"
+          className="relative flex items-center justify-center rounded-full border transition-all duration-150 hover:border-[var(--accent)] hover:text-[var(--accent)]"
           style={{
             width: 34,
             height: 34,
             borderColor: 'var(--border)',
             color: 'var(--text-s)',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.borderColor = 'var(--accent)';
-            e.currentTarget.style.color = 'var(--accent)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.borderColor = 'var(--border)';
-            e.currentTarget.style.color = 'var(--text-s)';
           }}
         >
           <Bell size={17} />
@@ -150,7 +118,7 @@ export default function Navbar({ breadcrumbName }: NavbarProps) {
           style={{
             width: 34,
             height: 34,
-            background: 'linear-gradient(135deg, #3B82F6, #8B5CF6)',
+            background: 'linear-gradient(135deg, #1D2C5C, #FFAA01)',
           }}
         >
           VA
