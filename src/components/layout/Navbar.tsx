@@ -1,4 +1,4 @@
-import { Hotel, LayoutDashboard, Building2, Search, Bell, ArrowLeft, ChevronRight } from 'lucide-react';
+import { Hotel, LayoutDashboard, Search, Bell, ArrowLeft, ChevronRight } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 interface NavbarProps {
@@ -7,7 +7,6 @@ interface NavbarProps {
 
 const tabs = [
   { id: '/', label: 'Home', icon: LayoutDashboard },
-  { id: '/clientes', label: 'Clientes', icon: Building2 },
 ];
 
 export default function Navbar({ breadcrumbName }: NavbarProps) {
@@ -45,7 +44,7 @@ export default function Navbar({ breadcrumbName }: NavbarProps) {
         <div className="flex items-center gap-0.5">
           {!breadcrumbName && tabs.map((t) => {
             const Icon = t.icon;
-            const isActive = currentPath === t.id || (t.id === '/clientes' && currentPath.startsWith('/clientes'));
+            const isActive = currentPath === t.id;
             return (
               <button
                 key={t.id}
@@ -88,12 +87,12 @@ export default function Navbar({ breadcrumbName }: NavbarProps) {
               <button
                 className="flex items-center gap-1 text-[13px] font-medium transition-colors duration-150"
                 style={{ color: 'var(--text-m)' }}
-                onClick={() => navigate('/clientes')}
+                onClick={() => navigate('/')}
                 onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent)'; }}
                 onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-m)'; }}
               >
                 <ArrowLeft size={14} />
-                Clientes
+                Home
               </button>
               <ChevronRight size={12} style={{ color: 'var(--text-m)' }} />
               <span>{breadcrumbName}</span>

@@ -3,7 +3,6 @@ import { Suspense, lazy } from 'react';
 import Navbar from '@/components/layout/Navbar';
 import PageContainer from '@/components/layout/PageContainer';
 
-const Home = lazy(() => import('@/pages/Home'));
 const Clientes = lazy(() => import('@/pages/Clientes'));
 const ClienteDetalhe = lazy(() => import('@/pages/ClienteDetalhe'));
 
@@ -24,8 +23,7 @@ export default function App() {
   return (
     <Routes>
       <Route element={<Layout />}>
-        <Route index element={<Home />} />
-        <Route path="clientes" element={<Clientes />} />
+        <Route index element={<Clientes />} />
         <Route path="clientes/:id" element={<ClienteDetalhe />} />
       </Route>
     </Routes>
