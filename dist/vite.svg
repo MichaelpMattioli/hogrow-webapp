@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <rect width="32" height="32" rx="8" fill="url(#g)"/>
+  <path d="M16 8l-2 4h4l-2 4m-3-1v5m6-5v5" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>
+  <text x="16" y="26" text-anchor="middle" font-family="sans-serif" font-size="5" font-weight="700" fill="#fff">HG</text>
+  <defs><linearGradient id="g" x1="0" y1="0" x2="32" y2="32"><stop stop-color="#3B82F6"/><stop offset="1" stop-color="#6366F1"/></linearGradient></defs>
+</svg>

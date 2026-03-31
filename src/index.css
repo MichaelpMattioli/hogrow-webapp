@@ -1,0 +1,75 @@
+@import "tailwindcss";
+
+/* ─── Custom Properties ─── */
+:root {
+  --bg: #F5F6FA;
+  --surface: #FFFFFF;
+  --surface-h: #F0F2F8;
+  --border: #E4E8F1;
+  --border-l: #EEF0F6;
+  --text: #161921;
+  --text-s: #5A6178;
+  --text-m: #99A0B4;
+  --accent: #3B82F6;
+  --accent-l: #EBF2FF;
+  --accent-d: #2563EB;
+  --green: #10B981;
+  --green-l: #ECFDF5;
+  --red: #EF4444;
+  --red-l: #FEF2F2;
+  --amber: #F59E0B;
+  --amber-l: #FFFBEB;
+  --r: 16px;
+  --rs: 10px;
+  --rx: 6px;
+  --sh: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02);
+  --sh-m: 0 4px 16px rgba(0,0,0,0.05), 0 1px 3px rgba(0,0,0,0.03);
+  --font: 'DM Sans', -apple-system, sans-serif;
+  --mono: 'JetBrains Mono', monospace;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font-family: var(--font);
+  cursor: pointer;
+  border: none;
+  background: none;
+  color: inherit;
+}
+
+/* ─── Animations ─── */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in {
+  animation: fadeIn 0.4s ease forwards;
+}
+
+.card-in {
+  animation: cardIn 0.45s ease forwards;
+  opacity: 0;
+}
+
+/* ─── Font utility classes ─── */
+.font-mono {
+  font-family: var(--mono) !important;
+}
