@@ -122,15 +122,13 @@ export default function Clientes() {
               {SORT_OPTIONS.map(o => (
                 <button
                   key={o.key}
-                  className="w-full text-left text-xs font-medium transition-colors"
+                  className={`w-full text-left text-xs font-medium transition-colors ${sort !== o.key ? 'hover:bg-[var(--surface-h)]' : ''}`}
                   style={{
                     padding: '8px 16px',
                     color: sort === o.key ? 'var(--accent)' : 'var(--text)',
                     background: sort === o.key ? 'var(--accent-l)' : 'transparent',
                   }}
                   onClick={() => { setSort(o.key); setOpen(false); }}
-                  onMouseEnter={e => { if (sort !== o.key) e.currentTarget.style.background = 'var(--surface-h)'; }}
-                  onMouseLeave={e => { if (sort !== o.key) e.currentTarget.style.background = 'transparent'; }}
                 >
                   {o.label}
                 </button>
@@ -140,16 +138,38 @@ export default function Clientes() {
         </div>
       </div>
 
-      <div className="flex flex-col gap-5">
-        {sorted.map((h, i) => (
-          <ClientListCard
-            key={h.id}
-            hotel={h}
-            onClick={() => navigate(`/clientes/${h.id}`)}
-            delay={i * 50}
-          />
-        ))}
-      </div>
+      {sorted.length === 0 ? (
+        <div
+          className="flex flex-col items-center justify-center"
+          style={{
+            padding: '64px 24px',
+            background: 'var(--surface)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--r)',
+            textAlign: 'center',
+          }}
+        >
+          <div
+            className="flex items-center justify-center rounded-full mb-4"
+            style={{ width: 48, height: 48, background: 'var(--surface-h)' }}
+          >
+            <span style={{ fontSize: 22 }}>🏨</span>
+          </div>
+          <p className="font-semibold" style={{ fontSize: 14, color: 'var(--text)' }}>Nenhum hotel cadastrado</p>
+          <p className="mt-1" style={{ fontSize: 12.5, color: 'var(--text-m)' }}>Adicione um hotel para começar a análise.</p>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-5">
+          {sorted.map((h, i) => (
+            <ClientListCard
+              key={h.id}
+              hotel={h}
+              onClick={() => navigate(`/clientes/${h.id}`)}
+              delay={i * 50}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
