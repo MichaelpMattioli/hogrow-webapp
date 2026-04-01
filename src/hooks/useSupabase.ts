@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
-import { buildHotelSummary, parseKpiRow } from '@/data/transforms';
+import { buildHotelSummary, parseKpiRow, deriveStatus } from '@/data/transforms';
 import type { HotelRow, ReceitaDiariaRow, KpiDiario, HotelSummary, PickupRow, BookingRate } from '@/data/types';
 
-// ─── Fetch all hotels with their aggregated KPIs ────────────────────
+// ─── Fetch all hotels via pre-aggregated view ────────────────────────
 
 export function useHotels() {
   const [hotels, setHotels] = useState<HotelSummary[]>([]);
@@ -14,37 +14,70 @@ export function useHotels() {
     async function load() {
       setLoading(true);
       try {
-        const { data: hotelRows, error: hErr } = await supabase
-          .from('hotel')
-          .select('*')
-          .eq('ativo', true)
-          .order('nome_fantasia');
+        const { data, error: err } = await supabase
+          .from('vw_hotel_summary')
+          .select('*');
 
-        if (hErr) throw hErr;
-        if (!hotelRows?.length) {
-          setHotels([]);
-          return;
-        }
+        if (err) throw err;
 
-        const hotelIds = hotelRows.map((h: HotelRow) => h.id);
-        const { data: kpiRows, error: kErr } = await supabase
-          .from('hotel_receita_diaria')
-          .select('*')
-          .in('hotel_id', hotelIds)
-          .order('data_referencia', { ascending: true });
+        const summaries: HotelSummary[] = ((data ?? []) as Record<string, unknown>[]).map(r => ({
+          id:          r.id          as number,
+          name:        r.nome_fantasia as string,
+          razaoSocial: r.razao_social  as string,
+          city:        (r.cidade       as string) ?? '—',
+          state:       (r.estado       as string) ?? '—',
+          uhs:         r.total_uhs     as number,
+          leitos:      r.total_leitos  as number | null,
+          ativo:       r.ativo         as boolean,
 
-        if (kErr) throw kErr;
+          // Aggregated — use view values as best proxies
+          avgOcc:          (r.occ_mes_atual  as number) ?? 0,
+          avgRevpar:       0,
+          avgDm:           null,
+          totalReceita:    (r.receita_ytd    as number) ?? 0,
+          totalRecDiarias: 0,
+          totalRecAb:      0,
+          diasComDados:    (r.dias_mes_atual as number) ?? 0,
 
-        const kpiByHotel = new Map<number, ReceitaDiariaRow[]>();
-        for (const row of (kpiRows ?? []) as ReceitaDiariaRow[]) {
-          const list = kpiByHotel.get(row.hotel_id) ?? [];
-          list.push(row);
-          kpiByHotel.set(row.hotel_id, list);
-        }
+          // Current month
+          receitaMesAtual:        (r.receita_mes_atual        as number) ?? 0,
+          recDiariasMesAtual:     (r.rec_diarias_mes_atual    as number) ?? 0,
+          receitaMesAnterior:     (r.receita_mes_anterior     as number) ?? 0,
+          recDiariasMesAnterior:  (r.rec_diarias_mes_anterior as number) ?? 0,
+          receitaMesQueVem:       0,
+          occMesAtual:            (r.occ_mes_atual            as number) ?? 0,
+          occMesAnterior:         (r.occ_mes_anterior         as number) ?? 0,
+          occMesQueVem:           0,
+          ocupadosMesAtual:       (r.ocupados_mes_atual       as number) ?? 0,
+          ocupadosMesAnterior:    (r.ocupados_mes_anterior    as number) ?? 0,
+          cortesiaMesAtual:       (r.cortesia_mes_atual       as number) ?? 0,
+          hospedesMesAtual:       (r.hospedes_mes_atual       as number) ?? 0,
+          diasMesAtual:           (r.dias_mes_atual           as number) ?? 0,
 
-        const summaries = (hotelRows as HotelRow[]).map(h =>
-          buildHotelSummary(h, kpiByHotel.get(h.id) ?? [])
-        );
+          // YoY (mesmo mês ano anterior)
+          receitaAnoAnterior:     (r.receita_ano_anterior     as number) ?? 0,
+          recDiariasAnoAnterior:  (r.rec_diarias_ano_anterior as number) ?? 0,
+          occAnoAnterior:         (r.occ_ano_anterior         as number) ?? 0,
+          ocupadosAnoAnterior:    (r.ocupados_ano_anterior    as number) ?? 0,
+
+          // YTD
+          receitaYTD:   (r.receita_ytd   as number) ?? 0,
+          occAvgYTD:    (r.occ_avg_ytd   as number) ?? 0,
+          ocupadosYTD:  (r.ocupados_ytd  as number) ?? 0,
+          hospedesYTD:  (r.hospedes_ytd  as number) ?? 0,
+          dmYTD:         r.dm_ytd        as number | null,
+
+          // Latest day snapshot
+          latestDate:      (r.latest_date      as string) ?? '—',
+          latestExtracao:  (r.latest_extracao  as string) ?? '—',
+          latestOcupados:  (r.latest_ocupados  as number) ?? 0,
+          latestOcc:       (r.latest_occ       as number) ?? 0,
+          latestRevpar:    0,
+          latestDm:         r.latest_dm        as number | null,
+          latestRecTotal:  (r.latest_rec_total as number) ?? 0,
+
+          status: deriveStatus((r.occ_mes_atual as number) ?? 0),
+        }));
 
         setHotels(summaries);
       } catch (err: unknown) {
