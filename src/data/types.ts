@@ -156,3 +156,29 @@ export interface StatusConfig {
   color: string;
   bg: string;
 }
+
+// ─── Booking Rate (Rate Shopper) ─────────────────────────────────────
+export interface BookingRate {
+  id: number;
+  hotelId: number;
+  checkinDate: string;       // YYYY-MM-DD
+  slug: string;
+  label: string;
+  type: 'cliente' | 'concorrente';
+  roomName: string;
+  roomId: string | null;
+  maxPersons: number;
+  mealPlan: string | null;
+  cancellation: string | null;
+  priceBrl: number;
+  scrapedAt: string;
+}
+
+// Computed per-day summary for the calendar cell
+export interface RateDaySummary {
+  date: string;
+  clientMin: number | null;
+  competitorMin: number | null;
+  pctVsCompetitor: number | null; // positive = client more expensive
+  hasData: boolean;
+}

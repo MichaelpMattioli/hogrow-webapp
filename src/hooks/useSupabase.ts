@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { buildHotelSummary, parseKpiRow } from '@/data/transforms';
-import type { HotelRow, ReceitaDiariaRow, KpiDiario, HotelSummary, PickupRow } from '@/data/types';
+import type { HotelRow, ReceitaDiariaRow, KpiDiario, HotelSummary, PickupRow, BookingRate } from '@/data/types';
 
 // ─── Fetch all hotels with their aggregated KPIs ────────────────────
 
@@ -121,6 +121,53 @@ export async function updateHotel(
 
   if (error) return { success: false, error: error.message };
   return { success: true };
+}
+
+// ─── Fetch booking rates (rate shopper) for a hotel + month ─────────
+
+export function useBookingRates(hotelId: number, yearMonth: string) {
+  const [rates, setRates] = useState<BookingRate[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      const from = `${yearMonth}-01`;
+      const [y, mo] = yearMonth.split('-').map(Number);
+      const lastDay = new Date(y, mo, 0).getDate();
+      const to = `${yearMonth}-${String(lastDay).padStart(2, '0')}`;
+
+      const { data, error } = await supabase
+        .from('booking_rates')
+        .select('*')
+        .eq('hotel_id', hotelId)
+        .gte('checkin_date', from)
+        .lte('checkin_date', to)
+        .order('checkin_date', { ascending: true });
+
+      if (!error && data) {
+        setRates((data as Record<string, unknown>[]).map(r => ({
+          id: r.id as number,
+          hotelId: r.hotel_id as number,
+          checkinDate: r.checkin_date as string,
+          slug: r.slug as string,
+          label: r.label as string,
+          type: r.type as 'cliente' | 'concorrente',
+          roomName: r.room_name as string,
+          roomId: r.room_id as string | null,
+          maxPersons: r.max_persons as number,
+          mealPlan: r.meal_plan as string | null,
+          cancellation: r.cancellation as string | null,
+          priceBrl: r.price_brl as number,
+          scrapedAt: r.scraped_at as string,
+        })));
+      }
+      setLoading(false);
+    }
+    load();
+  }, [hotelId, yearMonth]);
+
+  return { rates, loading };
 }
 
 // ─── Fetch pick-up data for a hotel ─────────────────────────────────
