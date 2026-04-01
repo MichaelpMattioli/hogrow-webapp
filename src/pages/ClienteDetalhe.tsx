@@ -1,18 +1,17 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { BedDouble, DollarSign, TrendingUp, BarChart3, Loader2, ArrowLeft, Calendar, MoreVertical, Pencil, ChevronDown, Check, Percent } from 'lucide-react';
-import { useHotelDetail, updateHotel, usePickup } from '@/hooks/useSupabase';
+import { BedDouble, DollarSign, TrendingUp, BarChart3, Loader2, ArrowLeft, Calendar, MoreVertical, Pencil, ChevronDown, Check, Percent, Users } from 'lucide-react';
+import { useHotelDetail, updateHotel, usePickup, useBookingRates } from '@/hooks/useSupabase';
 import { getInsights } from '@/data/transforms';
 import { STATUS_CONFIG } from '@/lib/utils';
 import type { HotelRow } from '@/data/types';
-import KpiCard from '@/components/ui/KpiCard';
+import PerformanceCard from '@/components/cards/PerformanceCard';
+import type { PerfData } from '@/components/cards/PerformanceCard';
 
-import OccupancyChart from '@/components/charts/OccupancyChart';
-import RevenueChart from '@/components/charts/RevenueChart';
-import KpiTable from '@/components/tables/KpiTable';
 import PickupTable from '@/components/tables/PickupTable';
 import InsightCard from '@/components/cards/InsightCard';
 import HotelEditForm from '@/components/forms/HotelEditForm';
+import RateCalendar from '@/components/rateshop/RateCalendar';
 
 type Tab = 'dashboard' | 'editar';
 
@@ -25,6 +24,8 @@ export default function ClienteDetalhe() {
   const { rows: pickupRows } = usePickup(Number(id));
   const mesAtual = new Date().toISOString().slice(0, 7);
   const [selectedMeses, setSelectedMeses] = useState<string[]>([mesAtual]);
+  const [rateMonth, setRateMonth] = useState(mesAtual);
+  const { rates, loading: ratesLoading } = useBookingRates(Number(id), rateMonth);
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [filterOpen, setFilterOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -71,35 +72,81 @@ export default function ClienteDetalhe() {
     return latestKpis.filter(k => selectedMeses.includes(k.date.slice(0, 7)));
   }, [latestKpis, selectedMeses]);
 
-  // Filtered all KPIs (all extractions) for audit
-  const filteredAllKpis = useMemo(() => {
-    if (selectedMeses.length === 0) return kpis;
-    return kpis.filter(k => selectedMeses.includes(k.date.slice(0, 7)));
-  }, [kpis, selectedMeses]);
+  const hotelUhs = summary?.uhs ?? (filteredKpis[0]?.totalUhs ?? 1);
 
-  // Aggregated KPIs from filtered data
-  const aggKpis = useMemo(() => {
-    if (filteredKpis.length === 0) return { uhsTT: 0, receita: 0, dmCcTT: 0, occTT: 0, revpTT: 0 };
-
-    const uhsTT = filteredKpis.reduce((s, k) => s + k.ocupados, 0);
-    const receita = Math.round(filteredKpis.reduce((s, k) => s + k.recTotal, 0));
+  // Helper: aggregate KPIs for any set of rows + month keys
+  function computeAgg(kpis: typeof filteredKpis, monthSet: string[]) {
+    if (kpis.length === 0) return null;
+    const uhsTT = kpis.reduce((s, k) => s + k.ocupados, 0);
+    const receita = Math.round(kpis.reduce((s, k) => s + k.recTotal, 0));
     const dmCcTT = uhsTT > 0 ? Math.round(receita / uhsTT) : 0;
-
-    // OCC TT = UHs TT / (sum of dias_no_mês × total_uhs per month)
-    const hotelUhs = summary?.uhs ?? (filteredKpis[0]?.totalUhs ?? 1);
-    const monthSet = [...new Set(filteredKpis.map(k => k.date.slice(0, 7)))];
-    const totalPossible = monthSet.reduce((sum, m) => {
+    const effectiveMonths = monthSet.length > 0
+      ? monthSet
+      : [...new Set(kpis.map(k => k.date.slice(0, 7)))];
+    const totalPossible = effectiveMonths.reduce((sum, m) => {
       const [y, mo] = m.split('-').map(Number);
-      const daysInMonth = new Date(y, mo, 0).getDate();
-      return sum + daysInMonth * hotelUhs;
+      return sum + new Date(y, mo, 0).getDate() * hotelUhs;
     }, 0);
-    const occTT = totalPossible > 0 ? Math.round((uhsTT / totalPossible) * 100) : 0;
-
-    // REVP TT = DM C/C TT × OCC TT%
+    const occTT = totalPossible > 0
+      ? parseFloat(((uhsTT / totalPossible) * 100).toFixed(1))
+      : 0;
     const revpTT = Math.round(dmCcTT * (occTT / 100));
+    const cortesia = kpis.reduce((s, k) => s + k.cortesia, 0);
+    const hospedes = kpis.reduce((s, k) => s + (k.pax ?? 0) + (k.chd ?? 0), 0);
+    return { uhsTT, receita, dmCcTT, occTT, revpTT, cortesia, hospedes };
+  }
 
-    return { uhsTT, receita, dmCcTT, occTT, revpTT };
-  }, [filteredKpis, summary]);
+  // Current period
+  const aggKpis = useMemo(
+    () => computeAgg(filteredKpis, selectedMeses),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [filteredKpis, selectedMeses, hotelUhs]
+  );
+
+  // Previous month keys (for each selected month, go back 1 month)
+  const prevMesMeses = useMemo(() => {
+    if (selectedMeses.length === 0) return [];
+    return selectedMeses.map(m => {
+      const [y, mo] = m.split('-').map(Number);
+      const pm = mo === 1 ? 12 : mo - 1;
+      const py = mo === 1 ? y - 1 : y;
+      return `${py}-${String(pm).padStart(2, '0')}`;
+    });
+  }, [selectedMeses]);
+
+  // Previous year keys (same months, -1 year)
+  const prevAnoMeses = useMemo(() => {
+    if (selectedMeses.length === 0) return [];
+    return selectedMeses.map(m => {
+      const [y, mo] = m.split('-').map(Number);
+      return `${y - 1}-${String(mo).padStart(2, '0')}`;
+    });
+  }, [selectedMeses]);
+
+  const prevMesKpis = useMemo(
+    () => latestKpis.filter(k => prevMesMeses.includes(k.date.slice(0, 7))),
+    [latestKpis, prevMesMeses]
+  );
+  const prevAnoKpis = useMemo(
+    () => latestKpis.filter(k => prevAnoMeses.includes(k.date.slice(0, 7))),
+    [latestKpis, prevAnoMeses]
+  );
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const prevMesAgg = useMemo(() => computeAgg(prevMesKpis, prevMesMeses), [prevMesKpis, prevMesMeses, hotelUhs]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const prevAnoAgg = useMemo(() => computeAgg(prevAnoKpis, prevAnoMeses), [prevAnoKpis, prevAnoMeses, hotelUhs]);
+
+  // Formatting helpers
+  const fmtR = (v: number) => 'R$ ' + v.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
+  const fmtRec = (v: number) =>
+    v >= 1_000_000
+      ? `R$ ${(v / 1_000_000).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}M`
+      : v >= 1_000
+        ? `R$ ${Math.round(v / 1_000).toLocaleString('pt-BR')}k`
+        : fmtR(v);
+  const fmtOcc = (v: number) => `${v.toFixed(1)}%`;
+  const pd = (v: number, fmt: (n: number) => string): PerfData => ({ value: v, formatted: fmt(v) });
 
   const toggleMonth = (m: string) => {
     setSelectedMeses(prev =>
@@ -295,33 +342,74 @@ export default function ClienteDetalhe() {
         )}
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-5" style={{ marginBottom: 40 }}>
-        <KpiCard title="UHs TT" value={aggKpis.uhsTT} delta={0} deltaLabel="" icon={BedDouble} delay={0} />
-        <KpiCard title="Receita" value={aggKpis.receita} prefix="R$ " delta={0} deltaLabel="" icon={BarChart3} delay={60} />
-        <KpiCard title="DM C/C TT" value={aggKpis.dmCcTT} prefix="R$ " delta={0} deltaLabel="" icon={DollarSign} delay={120} />
-        <KpiCard title="OCC TT" value={aggKpis.occTT} suffix="%" delta={0} deltaLabel="" icon={Percent} delay={180} />
-        <KpiCard title="REVP TT" value={aggKpis.revpTT} prefix="R$ " delta={0} deltaLabel="" icon={TrendingUp} delay={240} />
-      </div>
+      {/* Performance Indicators */}
+      {aggKpis && (
+        <>
+          {/* Row 1 — Primary KPIs */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-5" style={{ marginBottom: 12 }}>
+            <PerformanceCard
+              title="Receita" icon={BarChart3} highlight delay={0}
+              currentValue={aggKpis.receita} currentFormatted={fmtRec(aggKpis.receita)}
+              prevMonth={prevMesAgg ? pd(prevMesAgg.receita, fmtRec) : null}
+              prevYear={prevAnoAgg ? pd(prevAnoAgg.receita, fmtRec) : null}
+            />
+            <PerformanceCard
+              title="Ocupação" icon={Percent} highlight delay={60}
+              currentValue={aggKpis.occTT} currentFormatted={fmtOcc(aggKpis.occTT)}
+              prevMonth={prevMesAgg ? pd(prevMesAgg.occTT, fmtOcc) : null}
+              prevYear={prevAnoAgg ? pd(prevAnoAgg.occTT, fmtOcc) : null}
+            />
+            <PerformanceCard
+              title="Diária Média" icon={DollarSign} highlight delay={120}
+              currentValue={aggKpis.dmCcTT} currentFormatted={fmtR(aggKpis.dmCcTT)}
+              prevMonth={prevMesAgg ? pd(prevMesAgg.dmCcTT, fmtR) : null}
+              prevYear={prevAnoAgg ? pd(prevAnoAgg.dmCcTT, fmtR) : null}
+            />
+          </div>
 
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" style={{ marginBottom: 40 }}>
-        <OccupancyChart data={latestKpis} selectedMonths={selectedMeses} />
-        <RevenueChart data={latestKpis} selectedMonths={selectedMeses} />
-      </div>
+          {/* Row 2 — Secondary KPIs */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-5" style={{ marginBottom: 40 }}>
+            <PerformanceCard
+              title="RevPAR" icon={TrendingUp} delay={180}
+              currentValue={aggKpis.revpTT} currentFormatted={fmtR(aggKpis.revpTT)}
+              prevMonth={prevMesAgg ? pd(prevMesAgg.revpTT, fmtR) : null}
+              prevYear={prevAnoAgg ? pd(prevAnoAgg.revpTT, fmtR) : null}
+            />
+            <PerformanceCard
+              title="Room Nights" icon={BedDouble} delay={240}
+              currentValue={aggKpis.uhsTT}
+              currentFormatted={aggKpis.uhsTT.toLocaleString('pt-BR')}
+              prevMonth={prevMesAgg ? pd(prevMesAgg.uhsTT, n => n.toLocaleString('pt-BR')) : null}
+              prevYear={prevAnoAgg ? pd(prevAnoAgg.uhsTT, n => n.toLocaleString('pt-BR')) : null}
+            />
+            <PerformanceCard
+              title="Hóspedes" icon={Users} delay={300}
+              currentValue={aggKpis.hospedes}
+              currentFormatted={aggKpis.hospedes.toLocaleString('pt-BR')}
+              prevMonth={prevMesAgg ? pd(prevMesAgg.hospedes, n => n.toLocaleString('pt-BR')) : null}
+              prevYear={prevAnoAgg ? pd(prevAnoAgg.hospedes, n => n.toLocaleString('pt-BR')) : null}
+            />
+          </div>
+        </>
+      )}
 
       {/* Pick-Up Table */}
       <div style={{ marginBottom: 40 }}>
         <PickupTable data={pickupRows} selectedMonths={selectedMeses} />
       </div>
 
-      {/* Table + Insights */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="col-span-2">
-          <KpiTable data={filteredKpis} allData={filteredAllKpis} />
-        </div>
-        <InsightCard insights={insights} />
+      {/* Rate Shopper Calendar */}
+      <div style={{ marginBottom: 40 }}>
+        <RateCalendar
+          rates={rates}
+          loading={ratesLoading}
+          yearMonth={rateMonth}
+          onMonthChange={setRateMonth}
+        />
       </div>
+
+      {/* Insights */}
+      <InsightCard insights={insights} />
       </>
       )}
     </div>
