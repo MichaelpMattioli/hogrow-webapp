@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import type { BookingRate, RateDaySummary } from '@/data/types';
 import RateDayModal from './RateDayModal';
 
@@ -186,31 +186,68 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange 
                 const s = summaries.get(date);
                 const day = parseInt(date.slice(8));
                 const isToday = date === today;
-                const clickable = s?.hasData === true;
 
-                let cellBg = 'transparent';
+                // ── Estado 1: sem nenhum dado de scraping ──────────────────
+                if (!s) {
+                  return (
+                    <div
+                      key={date}
+                      style={{
+                        background: '#E2E4EE',
+                        border: isToday ? '1.5px solid var(--accent)' : '1px solid #CDD0DF',
+                        borderRadius: 'var(--rx)',
+                        padding: '7px 5px',
+                        minHeight: 72,
+                        textAlign: 'center',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: 11, fontWeight: isToday ? 700 : 500,
+                          color: isToday ? 'var(--accent)' : '#8A96B4',
+                          alignSelf: 'flex-end',
+                          paddingRight: 2,
+                        }}
+                      >
+                        {day}
+                      </span>
+                      <X
+                        size={14}
+                        strokeWidth={2.5}
+                        style={{ color: '#A0A8C0', marginBottom: 6 }}
+                      />
+                    </div>
+                  );
+                }
+
+                // ── Estado 2: tem dados, calcula cores ─────────────────────
+                const clickable = s.hasData;
+                let cellBg = 'var(--surface-h)';   // só cliente, sem concorrente
+                let borderColor = 'var(--border-l)';
                 let pctColor = 'var(--text-m)';
-                if (s?.pctVsCompetitor !== null && s?.pctVsCompetitor !== undefined) {
+
+                if (s.pctVsCompetitor !== null) {
                   if (s.pctVsCompetitor < 0) {
-                    cellBg = 'var(--green-l)'; pctColor = 'var(--green)';
+                    cellBg = 'var(--green-l)'; borderColor = '#A7F3D0'; pctColor = 'var(--green)';
                   } else if (s.pctVsCompetitor <= 30) {
-                    cellBg = 'var(--amber-l)'; pctColor = 'var(--amber)';
+                    cellBg = 'var(--amber-l)'; borderColor = '#FDE68A'; pctColor = 'var(--amber)';
                   } else {
-                    cellBg = 'var(--red-l)'; pctColor = 'var(--red)';
+                    cellBg = 'var(--red-l)'; borderColor = '#FECACA'; pctColor = 'var(--red)';
                   }
-                } else if (s?.clientMin !== null && s?.clientMin !== undefined) {
-                  // Has client data but no competitor data
-                  cellBg = 'var(--surface-h)';
                 }
 
                 return (
                   <button
                     key={date}
                     onClick={() => clickable && setSelectedDate(date)}
-                    className={clickable ? 'hover:shadow-[var(--sh)]' : ''}
+                    className={clickable ? 'hover:shadow-[var(--sh-m)]' : ''}
                     style={{
                       background: cellBg,
-                      border: isToday ? '1.5px solid var(--accent)' : '1px solid var(--border-l)',
+                      border: isToday ? '1.5px solid var(--accent)' : `1px solid ${borderColor}`,
                       borderRadius: 'var(--rx)',
                       padding: '7px 5px',
                       cursor: clickable ? 'pointer' : 'default',
@@ -230,7 +267,7 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange 
                       {day}
                     </div>
 
-                    {s?.clientMin !== null && s?.clientMin !== undefined ? (
+                    {s.clientMin !== null ? (
                       <>
                         <div
                           style={{
@@ -242,15 +279,22 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange 
                             style: 'currency', currency: 'BRL', maximumFractionDigits: 0,
                           })}
                         </div>
-                        {s.pctVsCompetitor !== null && (
+                        {s.pctVsCompetitor !== null ? (
                           <div style={{ fontSize: 10, fontWeight: 700, color: pctColor, marginTop: 4 }}>
                             {s.pctVsCompetitor >= 0 ? '+' : ''}
                             {s.pctVsCompetitor.toFixed(0)}%
                           </div>
+                        ) : (
+                          <div style={{ fontSize: 9, color: 'var(--text-m)', marginTop: 4 }}>
+                            sem concorrente
+                          </div>
                         )}
                       </>
                     ) : (
-                      <div style={{ fontSize: 10, color: 'var(--border)' }}>—</div>
+                      /* Tem dados de concorrente mas não do cliente */
+                      <div style={{ fontSize: 9, color: 'var(--text-m)', marginTop: 4, lineHeight: 1.4 }}>
+                        só<br />concorrente
+                      </div>
                     )}
                   </button>
                 );
@@ -259,24 +303,41 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange 
 
             {/* Legend */}
             <div
-              className="flex flex-wrap items-center gap-x-4 gap-y-1"
+              className="flex flex-wrap items-center gap-x-4 gap-y-2"
               style={{ marginTop: 16, borderTop: '1px solid var(--border-l)', paddingTop: 12 }}
             >
-              <span style={{ fontSize: 10, color: 'var(--text-m)', fontWeight: 500 }}>Legenda:</span>
+              <span style={{ fontSize: 10, color: 'var(--text-m)', fontWeight: 600 }}>Legenda:</span>
+
+              {/* No data */}
+              <div className="flex items-center gap-1.5">
+                <span
+                  style={{
+                    width: 10, height: 10, borderRadius: 3,
+                    background: '#E2E4EE', border: '1px solid #CDD0DF',
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <X size={6} strokeWidth={3} style={{ color: '#A0A8C0' }} />
+                </span>
+                <span style={{ fontSize: 10, color: 'var(--text-m)' }}>Sem dados</span>
+              </div>
+
+              {/* Colored states */}
               {[
-                { color: 'var(--green)', bg: 'var(--green-l)', label: 'Abaixo da concorrência' },
-                { color: 'var(--amber)', bg: 'var(--amber-l)', label: 'Até 30% acima' },
-                { color: 'var(--red)', bg: 'var(--red-l)', label: 'Mais de 30% acima' },
-              ].map(({ color, bg, label }) => (
+                { color: 'var(--green)', bg: 'var(--green-l)', border: '#A7F3D0', label: 'Abaixo da concorrência' },
+                { color: 'var(--amber)', bg: 'var(--amber-l)', border: '#FDE68A', label: 'Até 30% acima' },
+                { color: 'var(--red)',   bg: 'var(--red-l)',   border: '#FECACA', label: 'Mais de 30% acima' },
+              ].map(({ bg, border, color, label }) => (
                 <div key={label} className="flex items-center gap-1.5">
                   <span
                     style={{
                       width: 10, height: 10, borderRadius: 3,
-                      background: bg, border: `1px solid ${color}`,
+                      background: bg, border: `1px solid ${border}`,
                       display: 'inline-block', flexShrink: 0,
                     }}
                   />
-                  <span style={{ fontSize: 10, color: 'var(--text-m)' }}>{label}</span>
+                  <span style={{ fontSize: 10, color }}>{label}</span>
                 </div>
               ))}
             </div>
