@@ -3,15 +3,22 @@ import { Suspense, lazy } from 'react';
 import Navbar from '@/components/layout/Navbar';
 import PageContainer from '@/components/layout/PageContainer';
 
-const Clientes = lazy(() => import('@/pages/Clientes'));
+const Home      = lazy(() => import('@/pages/Home'));
+const Clientes  = lazy(() => import('@/pages/Clientes'));
 const ClienteDetalhe = lazy(() => import('@/pages/ClienteDetalhe'));
+
+const Spinner = () => (
+  <div className="flex items-center justify-center py-20" style={{ color: 'var(--text-m)' }}>
+    Carregando...
+  </div>
+);
 
 function Layout() {
   return (
     <>
       <Navbar />
       <PageContainer>
-        <Suspense fallback={<div className="text-center py-20 text-[var(--text-m)]">Carregando...</div>}>
+        <Suspense fallback={<Spinner />}>
           <Outlet />
         </Suspense>
       </PageContainer>
@@ -23,7 +30,8 @@ export default function App() {
   return (
     <Routes>
       <Route element={<Layout />}>
-        <Route index element={<Clientes />} />
+        <Route index               element={<Home />} />
+        <Route path="clientes"     element={<Clientes />} />
         <Route path="clientes/:id" element={<ClienteDetalhe />} />
       </Route>
     </Routes>
