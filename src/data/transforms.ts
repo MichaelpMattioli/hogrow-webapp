@@ -71,7 +71,19 @@ export function buildHotelSummary(hotel: HotelRow, kpiRows: ReceitaDiariaRow[]):
   let sumOccProx = 0; let countOccProx = 0;
 
   let ocupadosMesAtual = 0;
+  let cortesiaMesAtual = 0;
+  let recDiariasMesAtual = 0;
   let hospedesMesAtual = 0;
+
+  let recDiariasMesAnterior = 0;
+  let ocupadosMesAnterior = 0;
+
+  // YoY (same month, previous year)
+  const prevYearYm = `${currY - 1}-${String(currM).padStart(2, '0')}`;
+  let receitaAnoAnterior = 0;
+  let recDiariasAnoAnterior = 0;
+  let sumOccAnoAnt = 0; let countOccAnoAnt = 0;
+  let ocupadosAnoAnterior = 0;
 
   // YTD accumulators
   const currYearPrefix = String(currY) + '-';
@@ -84,15 +96,26 @@ export function buildHotelSummary(hotel: HotelRow, kpiRows: ReceitaDiariaRow[]):
     const ym = k.date.substring(0, 7);
     if (ym === prevYm) {
       receitaMesAnterior += k.recTotal;
+      recDiariasMesAnterior += k.recDiarias;
       sumOccAnt += k.occPct;
       countOccAnt++;
+      ocupadosMesAnterior += k.ocupados;
     }
     else if (ym === currYm) {
       receitaMesAtual += k.recTotal;
+      recDiariasMesAtual += k.recDiarias;
       sumOccAtual += k.occPct;
       countOccAtual++;
       ocupadosMesAtual += k.ocupados;
+      cortesiaMesAtual += k.cortesia;
       hospedesMesAtual += (k.pax ?? 0) + (k.chd ?? 0);
+    }
+    else if (ym === prevYearYm) {
+      receitaAnoAnterior += k.recTotal;
+      recDiariasAnoAnterior += k.recDiarias;
+      sumOccAnoAnt += k.occPct;
+      countOccAnoAnt++;
+      ocupadosAnoAnterior += k.ocupados;
     }
     else if (ym === nextYm) {
       receitaMesQueVem += k.recTotal;
@@ -112,6 +135,7 @@ export function buildHotelSummary(hotel: HotelRow, kpiRows: ReceitaDiariaRow[]):
   const occMesAnterior = countOccAnt > 0 ? sumOccAnt / countOccAnt : 0;
   const occMesAtual = countOccAtual > 0 ? sumOccAtual / countOccAtual : 0;
   const occMesQueVem = countOccProx > 0 ? sumOccProx / countOccProx : 0;
+  const occAnoAnterior = countOccAnoAnt > 0 ? sumOccAnoAnt / countOccAnoAnt : 0;
 
   const occAvgYTD = countOccYTD > 0 ? parseFloat((sumOccYTD / countOccYTD).toFixed(1)) : 0;
   const dmYTD = ocupadosYTD > 0 ? receitaYTD / ocupadosYTD : null;
@@ -146,8 +170,16 @@ export function buildHotelSummary(hotel: HotelRow, kpiRows: ReceitaDiariaRow[]):
     occMesAtual,
     occMesQueVem,
     ocupadosMesAtual,
+    cortesiaMesAtual,
+    recDiariasMesAtual,
     hospedesMesAtual,
     diasMesAtual: countOccAtual,
+    recDiariasMesAnterior,
+    ocupadosMesAnterior,
+    receitaAnoAnterior,
+    recDiariasAnoAnterior,
+    occAnoAnterior,
+    ocupadosAnoAnterior,
     receitaYTD,
     ocupadosYTD,
     hospedesYTD,
