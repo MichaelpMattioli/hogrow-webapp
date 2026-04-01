@@ -1,4 +1,4 @@
-import { LayoutDashboard, Search, Bell, ArrowLeft, ChevronRight } from 'lucide-react';
+import { LayoutDashboard, Hotel, Search, Bell, ArrowLeft, ChevronRight } from 'lucide-react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 
 interface NavbarProps {
@@ -6,7 +6,8 @@ interface NavbarProps {
 }
 
 const tabs = [
-  { id: '/', label: 'Home', icon: LayoutDashboard },
+  { id: '/',         label: 'Home',     icon: LayoutDashboard },
+  { id: '/clientes', label: 'Clientes', icon: Hotel },
 ];
 
 export default function Navbar({ breadcrumbName }: NavbarProps) {
@@ -14,16 +15,20 @@ export default function Navbar({ breadcrumbName }: NavbarProps) {
   const location = useLocation();
   const currentPath = location.pathname;
   const [searchParams, setSearchParams] = useSearchParams();
-  const isHome = currentPath === '/';
-  const searchValue = isHome ? (searchParams.get('q') ?? '') : '';
+
+  const isClientes = currentPath === '/clientes';
+  const searchValue = isClientes ? (searchParams.get('q') ?? '') : '';
 
   function handleSearch(value: string) {
-    if (!isHome) {
-      navigate(value ? `/?q=${encodeURIComponent(value)}` : '/');
+    if (!isClientes) {
+      navigate(value ? `/clientes?q=${encodeURIComponent(value)}` : '/clientes');
       return;
     }
     setSearchParams(value ? { q: value } : {}, { replace: true });
   }
+
+  // Detect if we're on a detail page (breadcrumb mode)
+  const isDetail = breadcrumbName != null;
 
   return (
     <header
@@ -46,11 +51,14 @@ export default function Navbar({ breadcrumbName }: NavbarProps) {
           />
         </div>
 
-        {/* Tabs */}
+        {/* Tabs or Breadcrumb */}
         <div className="flex items-center gap-0.5">
-          {!breadcrumbName && tabs.map((t) => {
+          {!isDetail && tabs.map((t) => {
             const Icon = t.icon;
-            const isActive = currentPath === t.id;
+            // active if exact match, or if current path starts with tab id (for nested routes)
+            const isActive = t.id === '/'
+              ? currentPath === '/'
+              : currentPath.startsWith(t.id);
             return (
               <button
                 key={t.id}
@@ -70,16 +78,16 @@ export default function Navbar({ breadcrumbName }: NavbarProps) {
             );
           })}
 
-          {/* Breadcrumb */}
-          {breadcrumbName && (
+          {/* Breadcrumb on detail pages */}
+          {isDetail && (
             <div className="flex items-center gap-1 text-[13px] font-medium">
               <button
                 className="flex items-center gap-1 text-[13px] font-medium transition-colors duration-150 hover:text-[var(--accent)]"
                 style={{ color: 'var(--text-m)' }}
-                onClick={() => navigate('/')}
+                onClick={() => navigate('/clientes')}
               >
                 <ArrowLeft size={14} />
-                Home
+                Clientes
               </button>
               <ChevronRight size={12} style={{ color: 'var(--text-m)' }} />
               <span style={{ color: 'var(--accent)', fontWeight: 600 }}>{breadcrumbName}</span>
@@ -89,40 +97,44 @@ export default function Navbar({ breadcrumbName }: NavbarProps) {
       </div>
 
       <div className="flex items-center gap-2.5">
-        <div
-          className="flex items-center gap-[7px] rounded-full transition-colors duration-150 focus-within:border-[var(--accent)] focus-within:bg-[var(--surface)]"
-          style={{
-            padding: '0 14px',
-            background: 'var(--bg)',
-            border: '1px solid var(--border)',
-          }}
-        >
-          <Search size={14} style={{ color: 'var(--text-m)', flexShrink: 0 }} />
-          <input
-            type="text"
-            value={searchValue}
-            onChange={e => handleSearch(e.target.value)}
-            placeholder="Buscar hotel..."
+        {/* Search — visible on /clientes and detail pages */}
+        {(isClientes || isDetail) && (
+          <div
+            className="flex items-center gap-[7px] rounded-full transition-colors duration-150 focus-within:border-[var(--accent)] focus-within:bg-[var(--surface)]"
             style={{
-              background: 'transparent',
-              border: 'none',
-              outline: 'none',
-              fontSize: '12.5px',
-              color: 'var(--text)',
-              width: 160,
-              height: 34,
-              fontFamily: 'var(--font)',
+              padding: '0 14px',
+              background: 'var(--bg)',
+              border: '1px solid var(--border)',
             }}
-          />
-          {searchValue && (
-            <button
-              onClick={() => handleSearch('')}
-              style={{ color: 'var(--text-m)', lineHeight: 1, padding: '0 2px' }}
-            >
-              ✕
-            </button>
-          )}
-        </div>
+          >
+            <Search size={14} style={{ color: 'var(--text-m)', flexShrink: 0 }} />
+            <input
+              type="text"
+              value={searchValue}
+              onChange={e => handleSearch(e.target.value)}
+              placeholder="Buscar hotel..."
+              style={{
+                background: 'transparent',
+                border: 'none',
+                outline: 'none',
+                fontSize: '12.5px',
+                color: 'var(--text)',
+                width: 160,
+                height: 34,
+                fontFamily: 'var(--font)',
+              }}
+            />
+            {searchValue && (
+              <button
+                onClick={() => handleSearch('')}
+                style={{ color: 'var(--text-m)', lineHeight: 1, padding: '0 2px' }}
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        )}
+
         <button
           className="relative flex items-center justify-center rounded-full border transition-all duration-150 hover:border-[var(--accent)] hover:text-[var(--accent)]"
           style={{
