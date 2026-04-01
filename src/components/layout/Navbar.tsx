@@ -1,5 +1,5 @@
 import { LayoutDashboard, Search, Bell, ArrowLeft, ChevronRight } from 'lucide-react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 
 interface NavbarProps {
   breadcrumbName?: string;
@@ -13,6 +13,17 @@ export default function Navbar({ breadcrumbName }: NavbarProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const currentPath = location.pathname;
+  const [searchParams, setSearchParams] = useSearchParams();
+  const isHome = currentPath === '/';
+  const searchValue = isHome ? (searchParams.get('q') ?? '') : '';
+
+  function handleSearch(value: string) {
+    if (!isHome) {
+      navigate(value ? `/?q=${encodeURIComponent(value)}` : '/');
+      return;
+    }
+    setSearchParams(value ? { q: value } : {}, { replace: true });
+  }
 
   return (
     <header
@@ -79,17 +90,38 @@ export default function Navbar({ breadcrumbName }: NavbarProps) {
 
       <div className="flex items-center gap-2.5">
         <div
-          className="flex items-center gap-[7px] rounded-full transition-colors duration-150"
+          className="flex items-center gap-[7px] rounded-full transition-colors duration-150 focus-within:border-[var(--accent)] focus-within:bg-[var(--surface)]"
           style={{
-            padding: '6px 14px',
+            padding: '0 14px',
             background: 'var(--bg)',
             border: '1px solid var(--border)',
-            fontSize: '12.5px',
-            color: 'var(--text-m)',
           }}
         >
-          <Search size={14} />
-          <span>Buscar hotel...</span>
+          <Search size={14} style={{ color: 'var(--text-m)', flexShrink: 0 }} />
+          <input
+            type="text"
+            value={searchValue}
+            onChange={e => handleSearch(e.target.value)}
+            placeholder="Buscar hotel..."
+            style={{
+              background: 'transparent',
+              border: 'none',
+              outline: 'none',
+              fontSize: '12.5px',
+              color: 'var(--text)',
+              width: 160,
+              height: 34,
+              fontFamily: 'var(--font)',
+            }}
+          />
+          {searchValue && (
+            <button
+              onClick={() => handleSearch('')}
+              style={{ color: 'var(--text-m)', lineHeight: 1, padding: '0 2px' }}
+            >
+              ✕
+            </button>
+          )}
         </div>
         <button
           className="relative flex items-center justify-center rounded-full border transition-all duration-150 hover:border-[var(--accent)] hover:text-[var(--accent)]"
