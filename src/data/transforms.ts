@@ -73,6 +73,13 @@ export function buildHotelSummary(hotel: HotelRow, kpiRows: ReceitaDiariaRow[]):
   let ocupadosMesAtual = 0;
   let hospedesMesAtual = 0;
 
+  // YTD accumulators
+  const currYearPrefix = String(currY) + '-';
+  let receitaYTD = 0;
+  let ocupadosYTD = 0;
+  let hospedesYTD = 0;
+  let sumOccYTD = 0; let countOccYTD = 0;
+
   kpis.forEach(k => {
     const ym = k.date.substring(0, 7);
     if (ym === prevYm) {
@@ -92,11 +99,22 @@ export function buildHotelSummary(hotel: HotelRow, kpiRows: ReceitaDiariaRow[]):
       sumOccProx += k.occPct;
       countOccProx++;
     }
+    // YTD: any day in the current year up to and including the current month
+    if (k.date.startsWith(currYearPrefix) && ym <= currYm) {
+      receitaYTD += k.recTotal;
+      ocupadosYTD += k.ocupados;
+      hospedesYTD += (k.pax ?? 0) + (k.chd ?? 0);
+      sumOccYTD += k.occPct;
+      countOccYTD++;
+    }
   });
 
   const occMesAnterior = countOccAnt > 0 ? sumOccAnt / countOccAnt : 0;
   const occMesAtual = countOccAtual > 0 ? sumOccAtual / countOccAtual : 0;
   const occMesQueVem = countOccProx > 0 ? sumOccProx / countOccProx : 0;
+
+  const occAvgYTD = countOccYTD > 0 ? parseFloat((sumOccYTD / countOccYTD).toFixed(1)) : 0;
+  const dmYTD = ocupadosYTD > 0 ? receitaYTD / ocupadosYTD : null;
 
   const latest = kpis.length > 0 ? kpis[kpis.length - 1] : null;
 
@@ -130,12 +148,18 @@ export function buildHotelSummary(hotel: HotelRow, kpiRows: ReceitaDiariaRow[]):
     ocupadosMesAtual,
     hospedesMesAtual,
     diasMesAtual: countOccAtual,
+    receitaYTD,
+    ocupadosYTD,
+    hospedesYTD,
+    occAvgYTD,
+    dmYTD,
     latestDate: latest?.date ?? '—',
     latestExtracao,
     latestOcc: latest?.occPct ?? 0,
     latestRevpar: latest?.revpar ?? 0,
     latestDm: latest?.adr ?? null,
     latestRecTotal: latest?.recTotal ?? 0,
+    latestOcupados: latest?.ocupados ?? 0,
     status: deriveStatus(avgOcc),
   };
 }
