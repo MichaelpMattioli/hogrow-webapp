@@ -123,9 +123,28 @@ export interface HotelSummary {
   occMesQueVem: number;
 
   // Current-month operational KPIs
+  recDiariasMesAtual: number;
   ocupadosMesAtual: number;
+  cortesiaMesAtual: number;
   hospedesMesAtual: number;
   diasMesAtual: number;
+
+  // Previous month (MoM)
+  recDiariasMesAnterior: number;
+  ocupadosMesAnterior: number;
+
+  // Same month previous year (YoY)
+  receitaAnoAnterior: number;
+  recDiariasAnoAnterior: number;
+  occAnoAnterior: number;
+  ocupadosAnoAnterior: number;
+
+  // YTD (Jan–current month, current year)
+  receitaYTD: number;
+  ocupadosYTD: number;
+  hospedesYTD: number;
+  occAvgYTD: number;      // average daily occ% across YTD days
+  dmYTD: number | null;   // receita / ocupados YTD
 
   // Latest day snapshot
   latestDate: string;
@@ -134,6 +153,7 @@ export interface HotelSummary {
   latestRevpar: number;
   latestDm: number | null;
   latestRecTotal: number;
+  latestOcupados: number; // rooms occupied on the latest day
 
   status: HotelStatus;
 }
