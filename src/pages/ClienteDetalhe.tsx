@@ -9,9 +9,7 @@ import type { HotelRow } from '@/data/types';
 import PerformanceCard from '@/components/cards/PerformanceCard';
 import type { PerfData } from '@/components/cards/PerformanceCard';
 
-import PickupTable from '@/components/tables/PickupTable';
-import PickupAcumuladoTable from '@/components/tables/PickupAcumuladoTable';
-import InsightCard from '@/components/cards/InsightCard';
+import PickupSection from '@/components/tables/PickupSection';
 import HotelEditForm from '@/components/forms/HotelEditForm';
 import RateCalendar from '@/components/rateshop/RateCalendar';
 
@@ -300,18 +298,14 @@ export default function ClienteDetalhe() {
         </>
       )}
 
-      {/* Pickup Acumulado */}
-      <div style={{ marginBottom: 28 }}>
-        <PickupAcumuladoTable
-          rows={acumuladoRows}
-          selectedMeses={selectedMeses}
-          loading={acumuladoLoading}
-        />
-      </div>
-
-      {/* Pick-Up Table */}
+      {/* Pick-up (Diário / Acumulado) */}
       <div style={{ marginBottom: 40 }}>
-        <PickupTable data={pickupRows} selectedMonths={selectedMeses} />
+        <PickupSection
+          pickupRows={pickupRows}
+          acumuladoRows={acumuladoRows}
+          acumuladoLoading={acumuladoLoading}
+          selectedMeses={selectedMeses}
+        />
       </div>
 
       {/* Rate Shopper Calendar */}
@@ -325,7 +319,6 @@ export default function ClienteDetalhe() {
       </div>
 
       {/* Insights */}
-      <InsightCard insights={insights} />
       </>
       )}
     </div>
