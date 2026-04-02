@@ -3,9 +3,10 @@ import { Suspense, lazy } from 'react';
 import Navbar from '@/components/layout/Navbar';
 import PageContainer from '@/components/layout/PageContainer';
 
-const Home      = lazy(() => import('@/pages/Home'));
-const Clientes  = lazy(() => import('@/pages/Clientes'));
+const Home           = lazy(() => import('@/pages/Home'));
+const Clientes       = lazy(() => import('@/pages/Clientes'));
 const ClienteDetalhe = lazy(() => import('@/pages/ClienteDetalhe'));
+const Metas          = lazy(() => import('@/pages/Metas'));
 
 const Spinner = () => (
   <div className="flex items-center justify-center py-20" style={{ color: 'var(--text-m)' }}>
@@ -33,6 +34,7 @@ export default function App() {
         <Route index               element={<Home />} />
         <Route path="clientes"     element={<Clientes />} />
         <Route path="clientes/:id" element={<ClienteDetalhe />} />
+        <Route path="metas"        element={<Metas />} />
       </Route>
     </Routes>
   );

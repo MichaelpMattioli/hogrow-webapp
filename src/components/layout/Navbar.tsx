@@ -1,4 +1,4 @@
-import { LayoutDashboard, Hotel, Search, Bell, ArrowLeft, ChevronRight } from 'lucide-react';
+import { LayoutDashboard, Hotel, Search, Bell, ArrowLeft, ChevronRight, Target } from 'lucide-react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 
 interface NavbarProps {
@@ -8,6 +8,7 @@ interface NavbarProps {
 const tabs = [
   { id: '/',         label: 'Home',     icon: LayoutDashboard },
   { id: '/clientes', label: 'Clientes', icon: Hotel },
+  { id: '/metas',    label: 'Metas',    icon: Target },
 ];
 
 export default function Navbar({ breadcrumbName }: NavbarProps) {
