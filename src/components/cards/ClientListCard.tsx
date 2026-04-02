@@ -318,7 +318,20 @@ interface MetaStripProps {
 
 function MetaStrip({ meta, receita, occ, dm }: MetaStripProps) {
   const hasAny = ok(meta.receitaMeta) || ok(meta.occMeta) || ok(meta.dmMeta);
-  if (!hasAny) return null;
+  if (!hasAny) {
+    return (
+      <div style={{
+        marginTop: 10, paddingTop: 10,
+        borderTop: '1px dashed var(--border-l)',
+        display: 'flex', alignItems: 'center', gap: 6,
+      }}>
+        <Target size={10} style={{ color: 'var(--border)', flexShrink: 0 }} />
+        <span style={{ fontSize: 10, color: 'var(--text-m)', fontStyle: 'italic' }}>
+          Sem definição de metas para este mês
+        </span>
+      </div>
+    );
+  }
 
   const fmtR$Compact = (v: number) => {
     if (v >= 1_000_000) return `R$ ${(v / 1_000_000).toFixed(1)}M`;
@@ -494,7 +507,7 @@ export default function ClientListCard({ hotel, meta, onClick, delay = 0 }: Clie
       >
         {/* Row 1 */}
         <KpiTile
-          label="Receita Total"
+          label="Receita"
           value={fmtRec(hotel.receitaMesAtual)}
           yoyDelta={recYoy}
           yoyType="pct"
@@ -541,13 +554,24 @@ export default function ClientListCard({ hotel, meta, onClick, delay = 0 }: Clie
       </div>
 
       {/* ── Meta strip ── */}
-      {meta && (
+      {meta ? (
         <MetaStrip
           meta={meta}
           receita={hotel.receitaMesAtual}
           occ={hotel.occMesAtual}
           dm={dm}
         />
+      ) : (
+        <div style={{
+          marginTop: 10, paddingTop: 10,
+          borderTop: '1px dashed var(--border-l)',
+          display: 'flex', alignItems: 'center', gap: 6,
+        }}>
+          <Target size={10} style={{ color: 'var(--border)', flexShrink: 0 }} />
+          <span style={{ fontSize: 10, color: 'var(--text-m)', fontStyle: 'italic' }}>
+            Sem definição de metas para este mês
+          </span>
+        </div>
       )}
     </button>
   );
