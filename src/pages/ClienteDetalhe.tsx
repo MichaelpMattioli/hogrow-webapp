@@ -1,7 +1,8 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { BedDouble, DollarSign, TrendingUp, BarChart3, Loader2, ArrowLeft, Calendar, MoreVertical, Pencil, ChevronDown, Check, Percent, Users } from 'lucide-react';
-import { useHotelDetail, updateHotel, usePickup, useBookingRates } from '@/hooks/useSupabase';
+import { BedDouble, DollarSign, TrendingUp, BarChart3, Loader2, ArrowLeft, MoreVertical, Pencil, Percent, Users } from 'lucide-react';
+import MonthYearPicker from '@/components/ui/MonthYearPicker';
+import { useHotelDetail, updateHotel, usePickup, useBookingRates, usePickupAcumulado } from '@/hooks/useSupabase';
 import { getInsights } from '@/data/transforms';
 import { STATUS_CONFIG } from '@/lib/utils';
 import type { HotelRow } from '@/data/types';
@@ -9,13 +10,13 @@ import PerformanceCard from '@/components/cards/PerformanceCard';
 import type { PerfData } from '@/components/cards/PerformanceCard';
 
 import PickupTable from '@/components/tables/PickupTable';
+import PickupAcumuladoTable from '@/components/tables/PickupAcumuladoTable';
 import InsightCard from '@/components/cards/InsightCard';
 import HotelEditForm from '@/components/forms/HotelEditForm';
 import RateCalendar from '@/components/rateshop/RateCalendar';
 
 type Tab = 'dashboard' | 'editar';
 
-const MES_LABELS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 
 export default function ClienteDetalhe() {
   const { id } = useParams<{ id: string }>();
@@ -26,16 +27,14 @@ export default function ClienteDetalhe() {
   const [selectedMeses, setSelectedMeses] = useState<string[]>([mesAtual]);
   const [rateMonth, setRateMonth] = useState(mesAtual);
   const { rates, loading: ratesLoading } = useBookingRates(Number(id), rateMonth);
+  const { rows: acumuladoRows, loading: acumuladoLoading } = usePickupAcumulado(Number(id), selectedMeses);
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
-  const [filterOpen, setFilterOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const filterRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Close dropdowns on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (filterRef.current && !filterRef.current.contains(e.target as Node)) setFilterOpen(false);
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
     };
     document.addEventListener('mousedown', handler);
@@ -103,16 +102,20 @@ export default function ClienteDetalhe() {
     [filteredKpis, selectedMeses, hotelUhs]
   );
 
-  // Previous month keys (for each selected month, go back 1 month)
-  const prevMesMeses = useMemo(() => {
-    if (selectedMeses.length === 0) return [];
-    return selectedMeses.map(m => {
-      const [y, mo] = m.split('-').map(Number);
-      const pm = mo === 1 ? 12 : mo - 1;
-      const py = mo === 1 ? y - 1 : y;
-      return `${py}-${String(pm).padStart(2, '0')}`;
-    });
-  }, [selectedMeses]);
+  // YTD: all months in the current calendar year up to today
+  const currentYear = new Date().getFullYear().toString();
+  const ytdMeses = useMemo(() => {
+    const todayYM = new Date().toISOString().slice(0, 7);
+    return [...new Set(latestKpis.map(k => k.date.slice(0, 7)))]
+      .filter(m => m.startsWith(currentYear) && m <= todayYM);
+  }, [latestKpis, currentYear]);
+
+  const ytdKpis = useMemo(
+    () => latestKpis.filter(k => ytdMeses.includes(k.date.slice(0, 7))),
+    [latestKpis, ytdMeses]
+  );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const ytdAgg = useMemo(() => computeAgg(ytdKpis, ytdMeses), [ytdKpis, ytdMeses, hotelUhs]);
 
   // Previous year keys (same months, -1 year)
   const prevAnoMeses = useMemo(() => {
@@ -123,17 +126,11 @@ export default function ClienteDetalhe() {
     });
   }, [selectedMeses]);
 
-  const prevMesKpis = useMemo(
-    () => latestKpis.filter(k => prevMesMeses.includes(k.date.slice(0, 7))),
-    [latestKpis, prevMesMeses]
-  );
   const prevAnoKpis = useMemo(
     () => latestKpis.filter(k => prevAnoMeses.includes(k.date.slice(0, 7))),
     [latestKpis, prevAnoMeses]
   );
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const prevMesAgg = useMemo(() => computeAgg(prevMesKpis, prevMesMeses), [prevMesKpis, prevMesMeses, hotelUhs]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const prevAnoAgg = useMemo(() => computeAgg(prevAnoKpis, prevAnoMeses), [prevAnoKpis, prevAnoMeses, hotelUhs]);
 
@@ -147,12 +144,6 @@ export default function ClienteDetalhe() {
         : fmtR(v);
   const fmtOcc = (v: number) => `${v.toFixed(1)}%`;
   const pd = (v: number, fmt: (n: number) => string): PerfData => ({ value: v, formatted: fmt(v) });
-
-  const toggleMonth = (m: string) => {
-    setSelectedMeses(prev =>
-      prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m].sort()
-    );
-  };
 
   const insights = getInsights(filteredKpis);
 
@@ -249,96 +240,13 @@ export default function ClienteDetalhe() {
         </>
       ) : (
       <>
-      {/* Period filter (dropdown multi-select) */}
-      <div className="flex items-center gap-2" ref={filterRef} style={{ position: 'relative', marginBottom: 40 }}>
-        <Calendar size={14} style={{ color: 'var(--text-m)' }} />
-        <button
-          className="flex items-center gap-2 rounded-[var(--rx)] text-xs font-medium transition-all duration-150"
-          style={{
-            padding: '6px 12px',
-            background: 'var(--surface)',
-            border: '1px solid var(--border)',
-            color: 'var(--text)',
-          }}
-          onClick={() => setFilterOpen(o => !o)}
-        >
-          <span>Período</span>
-          {selectedMeses.length > 0 && (
-            <span className="rounded-full text-[10px] font-bold" style={{
-              padding: '0 6px', background: 'var(--accent)', color: '#fff', lineHeight: '18px',
-            }}>{selectedMeses.length}</span>
-          )}
-          <ChevronDown size={13} style={{ color: 'var(--text-m)', transform: filterOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
-        </button>
-        {selectedMeses.length > 0 && (
-          <button
-            className="text-[10.5px] font-medium transition-colors duration-150 hover:text-[var(--accent)]"
-            style={{ color: 'var(--text-m)' }}
-            onClick={() => setSelectedMeses([])}
-          >
-            ✕ Limpar
-          </button>
-        )}
-        {selectedMeses.length > 0 && (
-          <div className="flex gap-1.5 flex-wrap">
-            {selectedMeses.map(m => {
-              const [year, month] = m.split('-');
-              return (
-                <span key={m} className="rounded-full text-[10.5px] font-medium" style={{
-                  padding: '2px 10px', background: 'var(--accent-l)', color: 'var(--accent-d)',
-                }}>
-                  {MES_LABELS[parseInt(month) - 1]}/{year}
-                </span>
-              );
-            })}
-          </div>
-        )}
-        {filterOpen && (
-          <div
-            className="rounded-[var(--r)]"
-            style={{
-              position: 'absolute', top: '100%', left: 22, marginTop: 4, zIndex: 50,
-              background: 'var(--surface)', border: '1px solid var(--border)',
-              boxShadow: 'var(--sh-m)', minWidth: 180, padding: '4px 0',
-            }}
-          >
-            <button
-              className="flex items-center gap-2 w-full text-left text-[12px] font-medium transition-colors duration-100 hover:bg-[var(--surface-h)]"
-              style={{ padding: '7px 14px', color: selectedMeses.length === 0 ? 'var(--accent)' : 'var(--text-m)' }}
-              onClick={() => { setSelectedMeses([]); setFilterOpen(false); }}
-            >
-              {selectedMeses.length === 0 && <Check size={13} style={{ color: 'var(--accent)' }} />}
-              {selectedMeses.length > 0 && <span style={{ width: 13 }} />}
-              Todos os meses
-            </button>
-            <div style={{ height: 1, background: 'var(--border)', margin: '2px 0' }} />
-            {meses.map(m => {
-              const [year, month] = m.split('-');
-              const label = `${MES_LABELS[parseInt(month) - 1]}/${year}`;
-              const checked = selectedMeses.includes(m);
-              return (
-                <button
-                  key={m}
-                  className="flex items-center gap-2 w-full text-left text-[12px] font-medium transition-colors duration-100 hover:bg-[var(--surface-h)]"
-                  style={{ padding: '7px 14px', color: checked ? 'var(--text)' : 'var(--text-m)' }}
-                  onClick={() => toggleMonth(m)}
-                >
-                  <span
-                    className="flex items-center justify-center rounded-[3px]"
-                    style={{
-                      width: 15, height: 15, flexShrink: 0,
-                      border: `1.5px solid ${checked ? 'var(--accent)' : 'var(--border)'}`,
-                      background: checked ? 'var(--accent)' : 'transparent',
-                    }}
-                  >
-                    {checked && <Check size={10} style={{ color: '#fff' }} />}
-                  </span>
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-        )}
+      {/* Period filter — month/year calendar picker */}
+      <div style={{ marginBottom: 40 }}>
+        <MonthYearPicker
+          selected={selectedMeses}
+          onChange={setSelectedMeses}
+          available={meses}
+        />
       </div>
 
       {/* Performance Indicators */}
@@ -349,20 +257,20 @@ export default function ClienteDetalhe() {
             <PerformanceCard
               title="Receita" icon={BarChart3} highlight delay={0}
               currentValue={aggKpis.receita} currentFormatted={fmtRec(aggKpis.receita)}
-              prevMonth={prevMesAgg ? pd(prevMesAgg.receita, fmtRec) : null}
               prevYear={prevAnoAgg ? pd(prevAnoAgg.receita, fmtRec) : null}
+              ytd={ytdAgg ? pd(ytdAgg.receita, fmtRec) : null}
             />
             <PerformanceCard
               title="Ocupação" icon={Percent} highlight delay={60}
               currentValue={aggKpis.occTT} currentFormatted={fmtOcc(aggKpis.occTT)}
-              prevMonth={prevMesAgg ? pd(prevMesAgg.occTT, fmtOcc) : null}
               prevYear={prevAnoAgg ? pd(prevAnoAgg.occTT, fmtOcc) : null}
+              ytd={ytdAgg ? pd(ytdAgg.occTT, fmtOcc) : null}
             />
             <PerformanceCard
               title="Diária Média" icon={DollarSign} highlight delay={120}
               currentValue={aggKpis.dmCcTT} currentFormatted={fmtR(aggKpis.dmCcTT)}
-              prevMonth={prevMesAgg ? pd(prevMesAgg.dmCcTT, fmtR) : null}
               prevYear={prevAnoAgg ? pd(prevAnoAgg.dmCcTT, fmtR) : null}
+              ytd={ytdAgg ? pd(ytdAgg.dmCcTT, fmtR) : null}
             />
           </div>
 
@@ -371,26 +279,35 @@ export default function ClienteDetalhe() {
             <PerformanceCard
               title="RevPAR" icon={TrendingUp} delay={180}
               currentValue={aggKpis.revpTT} currentFormatted={fmtR(aggKpis.revpTT)}
-              prevMonth={prevMesAgg ? pd(prevMesAgg.revpTT, fmtR) : null}
               prevYear={prevAnoAgg ? pd(prevAnoAgg.revpTT, fmtR) : null}
+              ytd={ytdAgg ? pd(ytdAgg.revpTT, fmtR) : null}
             />
             <PerformanceCard
               title="Room Nights" icon={BedDouble} delay={240}
               currentValue={aggKpis.uhsTT}
               currentFormatted={aggKpis.uhsTT.toLocaleString('pt-BR')}
-              prevMonth={prevMesAgg ? pd(prevMesAgg.uhsTT, n => n.toLocaleString('pt-BR')) : null}
               prevYear={prevAnoAgg ? pd(prevAnoAgg.uhsTT, n => n.toLocaleString('pt-BR')) : null}
+              ytd={ytdAgg ? pd(ytdAgg.uhsTT, n => n.toLocaleString('pt-BR')) : null}
             />
             <PerformanceCard
               title="Hóspedes" icon={Users} delay={300}
               currentValue={aggKpis.hospedes}
               currentFormatted={aggKpis.hospedes.toLocaleString('pt-BR')}
-              prevMonth={prevMesAgg ? pd(prevMesAgg.hospedes, n => n.toLocaleString('pt-BR')) : null}
               prevYear={prevAnoAgg ? pd(prevAnoAgg.hospedes, n => n.toLocaleString('pt-BR')) : null}
+              ytd={ytdAgg ? pd(ytdAgg.hospedes, n => n.toLocaleString('pt-BR')) : null}
             />
           </div>
         </>
       )}
+
+      {/* Pickup Acumulado */}
+      <div style={{ marginBottom: 28 }}>
+        <PickupAcumuladoTable
+          rows={acumuladoRows}
+          selectedMeses={selectedMeses}
+          loading={acumuladoLoading}
+        />
+      </div>
 
       {/* Pick-Up Table */}
       <div style={{ marginBottom: 40 }}>
