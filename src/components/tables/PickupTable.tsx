@@ -1,5 +1,5 @@
 import { useMemo, useState, useRef, useEffect } from 'react';
-import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
 import type { PickupRow } from '@/data/types';
 
 // ─── Formatting helpers ───────────────────────────────────────────────
@@ -203,6 +203,9 @@ export default function PickupTable({ data, selectedMonths }: PickupTableProps) 
   const defaultExtracao = allExtracoes.length > 0 ? allExtracoes[allExtracoes.length - 1] : null;
   const activeExtracao = selectedExtracao ?? defaultExtracao;
 
+  // Filter: only rows with changes
+  const [onlyChanged, setOnlyChanged] = useState(false);
+
   // Filter by selected months then by extraction date
   const filtered = useMemo(() => {
     let rows = data;
@@ -210,8 +213,18 @@ export default function PickupTable({ data, selectedMonths }: PickupTableProps) 
       rows = rows.filter(r => selectedMonths.includes(r.data_referencia.slice(0, 7)));
     if (activeExtracao)
       rows = rows.filter(r => r.data_extracao === activeExtracao);
+    if (onlyChanged)
+      rows = rows.filter(r =>
+        r.data_extracao_ant !== null && (
+          r.pu_tt_uh !== 0 ||
+          parseFloat(r.pu_rec_hosp) !== 0 ||
+          parseFloat(r.pu_dm_tt)   !== 0 ||
+          parseFloat(r.pu_occ_tt)  !== 0 ||
+          parseFloat(r.pu_revpar_tt) !== 0
+        )
+      );
     return rows.sort((a, b) => a.data_referencia.localeCompare(b.data_referencia));
-  }, [data, selectedMonths, activeExtracao]);
+  }, [data, selectedMonths, activeExtracao, onlyChanged]);
 
   const hasPickup = filtered.some(r => r.data_extracao_ant !== null);
 
@@ -235,14 +248,42 @@ export default function PickupTable({ data, selectedMonths }: PickupTableProps) 
           </p>
         </div>
 
-        {/* Extraction date picker */}
-        {allExtracoes.length > 0 && (
-          <ExtracaoCalendar
-            available={allExtracoes}
-            selected={activeExtracao}
-            onSelect={setSelectedExtracao}
-          />
-        )}
+        {/* Right controls */}
+        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+          {/* Only-changed toggle */}
+          <button
+            onClick={() => setOnlyChanged(v => !v)}
+            title="Mostrar apenas linhas com alteração"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 5,
+              padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600,
+              cursor: 'pointer', transition: 'all 0.15s',
+              border: onlyChanged ? '1.5px solid var(--accent)' : '1px solid var(--border)',
+              background: onlyChanged ? 'rgba(var(--accent-rgb),0.08)' : 'transparent',
+              color: onlyChanged ? 'var(--accent)' : 'var(--text-m)',
+            }}
+          >
+            <Filter size={11} />
+            Com alteração
+            {onlyChanged && (
+              <span style={{
+                fontSize: 9, fontWeight: 700, background: 'var(--accent)', color: '#fff',
+                borderRadius: 10, padding: '1px 5px', marginLeft: 2,
+              }}>
+                {filtered.length}
+              </span>
+            )}
+          </button>
+
+          {/* Extraction date picker */}
+          {allExtracoes.length > 0 && (
+            <ExtracaoCalendar
+              available={allExtracoes}
+              selected={activeExtracao}
+              onSelect={setSelectedExtracao}
+            />
+          )}
+        </div>
       </div>
 
       {/* Table */}
