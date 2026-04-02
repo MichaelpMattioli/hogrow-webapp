@@ -49,28 +49,33 @@ export default function RateDayModal({ date, rates, anchorTop, onClose }: Props)
   });
 
   return (
-    <div
-      className="fixed inset-0 flex items-start"
-      style={{
-        zIndex: 1000,
-        background: 'rgba(10,12,40,0.5)',
-        backdropFilter: 'blur(4px)',
-        paddingTop: anchorTop ?? 24,
-        paddingLeft: '5%',
-        paddingRight: '5%',
-      }}
-      onClick={e => e.target === e.currentTarget && onClose()}
-    >
+    <>
+      {/* Backdrop — fixed overlay to dim the page */}
       <div
         style={{
+          position: 'fixed', inset: 0, zIndex: 999,
+          background: 'rgba(10,12,40,0.5)',
+          backdropFilter: 'blur(4px)',
+        }}
+        onClick={onClose}
+      />
+
+      {/* Card — absolute in the document so it aligns with the Rate Shopper section */}
+      <div
+        style={{
+          position: 'absolute',
+          top: anchorTop ?? 200,
+          left: '5%',
+          right: '5%',
+          zIndex: 1000,
           background: 'var(--surface)',
           borderRadius: 16,
           boxShadow: '0 32px 80px rgba(10,12,40,0.28), 0 2px 8px rgba(10,12,40,0.12)',
-          width: '100%',
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
         }}
+        onClick={e => e.stopPropagation()}
       >
         {/* ── Header ── */}
         <div style={{
@@ -302,6 +307,6 @@ export default function RateDayModal({ date, rates, anchorTop, onClose }: Props)
           </span>
         </div>
       </div>
-    </div>
+    </>
   );
 }

@@ -398,11 +398,12 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange 
   const containerRef    = useRef<HTMLDivElement>(null);
   const [modalAnchorTop, setModalAnchorTop] = useState(0);
 
-  // Capture the container's viewport-top BEFORE the modal renders so the
-  // layout has not yet shifted when we read getBoundingClientRect().
+  // Capture document-absolute top (getBoundingClientRect + scrollY) BEFORE
+  // the modal renders so the layout hasn't shifted yet.
   const openModal = useCallback((date: string) => {
     if (containerRef.current) {
-      setModalAnchorTop(containerRef.current.getBoundingClientRect().top);
+      const rect = containerRef.current.getBoundingClientRect();
+      setModalAnchorTop(rect.top + window.scrollY);
     }
     setSelectedDate(date);
   }, []);
