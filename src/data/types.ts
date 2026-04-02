@@ -177,6 +177,17 @@ export interface StatusConfig {
   bg: string;
 }
 
+// ─── Hotel Meta (Goals per hotel/month) ─────────────────────────────
+export interface HotelMeta {
+  id?: number;
+  hotelId: number;
+  mesAno: string;              // 'YYYY-MM'
+  receitaMeta: number | null;
+  occMeta: number | null;      // target occ%
+  dmMeta: number | null;       // target daily rate R$
+  revparMeta: number | null;   // target RevPAR R$
+}
+
 // ─── Booking Rate (Rate Shopper) ─────────────────────────────────────
 export interface BookingRate {
   id: number;

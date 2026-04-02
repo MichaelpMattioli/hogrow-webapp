@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { buildHotelSummary, parseKpiRow, deriveStatus } from '@/data/transforms';
-import type { HotelRow, ReceitaDiariaRow, KpiDiario, HotelSummary, PickupRow, BookingRate } from '@/data/types';
+import type { HotelRow, ReceitaDiariaRow, KpiDiario, HotelSummary, PickupRow, BookingRate, HotelMeta } from '@/data/types';
 
 // ─── Fetch all hotels via pre-aggregated view ────────────────────────
 
@@ -203,6 +203,113 @@ export function useBookingRates(hotelId: number, yearMonth: string) {
   return { rates, loading };
 }
 
+// ─── Hotel Monthly KPIs (history for Metas page) ────────────────────
+
+export interface MonthlyKpi {
+  hotelId: number;
+  mesAno:  string;
+  receita: number;
+  recDiarias: number;
+  occ:     number;
+  dm:      number | null;
+  revpar:  number | null;
+  ocupados: number;
+  cortesia: number;
+  hospedes: number;
+  dias:    number;
+}
+
+export function useHotelsMonthly() {
+  const [rows, setRows]       = useState<MonthlyKpi[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('vw_hotel_monthly_kpis')
+        .select('*');
+      if (!error && data) {
+        setRows((data as Record<string, unknown>[]).map(r => ({
+          hotelId:   r.hotel_id    as number,
+          mesAno:    r.mes_ano     as string,
+          receita:   (r.receita    as number) ?? 0,
+          recDiarias:(r.rec_diarias as number) ?? 0,
+          occ:       (r.occ        as number) ?? 0,
+          dm:         r.dm         as number | null,
+          revpar:     r.revpar     as number | null,
+          ocupados:  (r.ocupados   as number) ?? 0,
+          cortesia:  (r.cortesia   as number) ?? 0,
+          hospedes:  (r.hospedes   as number) ?? 0,
+          dias:      (r.dias       as number) ?? 0,
+        })));
+      }
+      setLoading(false);
+    }
+    load();
+  }, []);
+
+  return { rows, loading };
+}
+
+// ─── Hotel Metas (goals) ─────────────────────────────────────────────
+
+export function useHotelMetas(mesAno: string) {
+  const [metas, setMetas] = useState<HotelMeta[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [version, setVersion] = useState(0);
+
+  const reload = useCallback(() => setVersion(v => v + 1), []);
+
+  useEffect(() => {
+    if (!mesAno) return;
+    async function load() {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('hotel_metas')
+        .select('*')
+        .eq('mes_ano', mesAno);
+
+      if (!error && data) {
+        setMetas((data as Record<string, unknown>[]).map(r => ({
+          id:           r.id          as number,
+          hotelId:      r.hotel_id    as number,
+          mesAno:       r.mes_ano     as string,
+          receitaMeta:  r.receita_meta as number | null,
+          occMeta:      r.occ_meta    as number | null,
+          dmMeta:       r.dm_meta     as number | null,
+          revparMeta:   r.revpar_meta as number | null,
+        })));
+      }
+      setLoading(false);
+    }
+    load();
+  }, [mesAno, version]);
+
+  return { metas, loading, reload };
+}
+
+export async function saveHotelMeta(
+  meta: Omit<HotelMeta, 'id'>
+): Promise<{ success: boolean; error?: string }> {
+  const { error } = await supabase
+    .from('hotel_metas')
+    .upsert(
+      {
+        hotel_id:     meta.hotelId,
+        mes_ano:      meta.mesAno,
+        receita_meta: meta.receitaMeta,
+        occ_meta:     meta.occMeta,
+        dm_meta:      meta.dmMeta,
+        revpar_meta:  meta.revparMeta,
+        updated_at:   new Date().toISOString(),
+      },
+      { onConflict: 'hotel_id,mes_ano' }
+    );
+  if (error) return { success: false, error: error.message };
+  return { success: true };
+}
+
 // ─── Fetch pick-up data for a hotel ─────────────────────────────────
 
 export function usePickup(hotelId: number) {
@@ -223,6 +330,183 @@ export function usePickup(hotelId: number) {
     }
     load();
   }, [hotelId]);
+
+  return { rows, loading };
+}
+
+// ─── All metas (for history table with meta columns) ─────────────────
+
+export function useAllMetas() {
+  const [metas, setMetas] = useState<HotelMeta[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('hotel_metas')
+        .select('*');
+
+      if (!error && data) {
+        setMetas((data as Record<string, unknown>[]).map(r => ({
+          id:           r.id           as number,
+          hotelId:      r.hotel_id     as number,
+          mesAno:       r.mes_ano      as string,
+          receitaMeta:  r.receita_meta as number | null,
+          occMeta:      r.occ_meta     as number | null,
+          dmMeta:       r.dm_meta      as number | null,
+          revparMeta:   r.revpar_meta  as number | null,
+        })));
+      }
+      setLoading(false);
+    }
+    load();
+  }, []);
+
+  return { metas, loading };
+}
+
+// ─── Pickup summary (aggregate per hotel for current month) ──────────
+
+export interface PickupSummary {
+  hotelId: number;
+  pu7dUhs: number;
+  pu7dReceita: number;
+}
+
+export function usePickupSummary() {
+  const [summaries, setSummaries] = useState<PickupSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      const now = new Date();
+      const mesAtual = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      const from = `${mesAtual}-01`;
+      const [y, mo] = mesAtual.split('-').map(Number);
+      const lastDay = new Date(y, mo, 0).getDate();
+      const to = `${mesAtual}-${String(lastDay).padStart(2, '0')}`;
+
+      const { data, error } = await supabase
+        .from('vw_pickup_diario')
+        .select('hotel_id, pu_tt_uh, pu_rec_hosp, data_extracao_ant')
+        .gte('data_referencia', from)
+        .lte('data_referencia', to);
+
+      if (!error && data) {
+        const byHotel = new Map<number, { uhs: number; rec: number }>();
+        for (const r of data as Record<string, unknown>[]) {
+          if (r.data_extracao_ant == null) continue;
+          const hid = r.hotel_id as number;
+          const acc = byHotel.get(hid) ?? { uhs: 0, rec: 0 };
+          acc.uhs += (r.pu_tt_uh as number) || 0;
+          acc.rec += parseFloat(String(r.pu_rec_hosp)) || 0;
+          byHotel.set(hid, acc);
+        }
+        setSummaries([...byHotel.entries()].map(([hid, v]) => ({
+          hotelId: hid,
+          pu7dUhs: v.uhs,
+          pu7dReceita: v.rec,
+        })));
+      }
+      setLoading(false);
+    }
+    load();
+  }, []);
+
+  return { summaries, loading };
+}
+
+// ─── Pickup Acumulado ────────────────────────────────────────────────
+
+export interface PickupAcumuladoRow {
+  hotelId:               number;
+  dataReferencia:        string;   // YYYY-MM-DD
+  dataExtracao:          string;   // YYYY-MM-DD
+  uhsTotal:              number;
+  uhsOcupadas:           number;
+  occPct:                number;
+  reservas:              number;
+  checkins:              number;
+  checkouts:             number;
+  recTotal:              number;
+  recDiarias:            number;
+  adr:                   number;
+  revpar:                number;
+  pickupUhsDia:          number;
+  pickupUhsAcumulado:    number;
+  pickupReceitaDia:      number;
+  pickupReceitaAcumulado: number;
+  totalSnapshots:        number;
+}
+
+function mesAnoToRange(mesAno: string): [string, string] {
+  const [y, m] = mesAno.split('-').map(Number);
+  const last = new Date(y, m, 0).getDate();
+  return [`${mesAno}-01`, `${mesAno}-${String(last).padStart(2, '0')}`];
+}
+
+export function usePickupAcumulado(hotelId: number, selectedMeses: string[]) {
+  const [rows, setRows]       = useState<PickupAcumuladoRow[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const key = selectedMeses.slice().sort().join(',');
+
+  useEffect(() => {
+    if (!hotelId || selectedMeses.length === 0) { setRows([]); setLoading(false); return; }
+
+    async function load() {
+      setLoading(true);
+      const ranges = selectedMeses.map(mesAnoToRange);
+      const from = ranges.reduce((min, [s]) => s < min ? s : min, ranges[0][0]);
+      const to   = ranges.reduce((max, [, e]) => e > max ? e : max, ranges[0][1]);
+
+      const { data, error } = await supabase
+        .from('pickup_acumulado')
+        .select('*')
+        .eq('hotel_id', hotelId)
+        .gte('data_referencia', from)
+        .lte('data_referencia', to)
+        .order('data_referencia', { ascending: true })
+        .order('data_extracao',   { ascending: true });
+
+      if (!error && data) {
+        // Keep only the latest extraction per data_referencia
+        const latest = new Map<string, PickupAcumuladoRow>();
+        for (const r of data as Record<string, unknown>[]) {
+          const dr = r.data_referencia as string;
+          const parsed: PickupAcumuladoRow = {
+            hotelId:               r.hotel_id              as number,
+            dataReferencia:        dr,
+            dataExtracao:          r.data_extracao         as string,
+            uhsTotal:              (r.uhs_total            as number) ?? 0,
+            uhsOcupadas:           (r.uhs_ocupadas         as number) ?? 0,
+            occPct:                parseFloat(String(r.occ_pct))           || 0,
+            reservas:              (r.reservas             as number) ?? 0,
+            checkins:              (r.checkins             as number) ?? 0,
+            checkouts:             (r.checkouts            as number) ?? 0,
+            recTotal:              parseFloat(String(r.rec_total))          || 0,
+            recDiarias:            parseFloat(String(r.rec_diarias))        || 0,
+            adr:                   parseFloat(String(r.adr))                || 0,
+            revpar:                parseFloat(String(r.revpar))             || 0,
+            pickupUhsDia:          (r.pickup_uhs_dia       as number) ?? 0,
+            pickupUhsAcumulado:    (r.pickup_uhs_acumulado as number) ?? 0,
+            pickupReceitaDia:      parseFloat(String(r.pickup_receita_dia))      || 0,
+            pickupReceitaAcumulado: parseFloat(String(r.pickup_receita_acumulado)) || 0,
+            totalSnapshots:        (r.total_snapshots      as number) ?? 0,
+          };
+          // Always overwrite — since rows are ordered asc by data_extracao, last write = latest
+          latest.set(dr, parsed);
+        }
+        setRows([...latest.values()].sort((a, b) => a.dataReferencia.localeCompare(b.dataReferencia)));
+      }
+      setLoading(false);
+    }
+
+    load();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hotelId, key]);
 
   return { rows, loading };
 }
