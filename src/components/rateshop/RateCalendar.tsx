@@ -1,22 +1,40 @@
-import { useState, useMemo } from 'react';
-import { ChevronLeft, ChevronRight, X, RefreshCw, CalendarDays, Table2, Download } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { ChevronLeft, ChevronRight, X, RefreshCw, CalendarDays, Table2, Download, Users } from 'lucide-react';
 import type { BookingRate, RateDaySummary } from '@/data/types';
 import RateDayModal from './RateDayModal';
 
-// ─── Helpers ──────────────────────────────────────────────────────────
+// ─── Constants ────────────────────────────────────────────────────────
 
 const MONTH_LABELS = [
   'Janeiro','Fevereiro','Março','Abril','Maio','Junho',
   'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro',
 ];
-const DAY_LABELS  = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
+const DAY_LABELS  = ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
 const DAY_LABELS3 = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+
+// ─── Helpers ──────────────────────────────────────────────────────────
 
 function fmtBRL(v: number) {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
 }
 
-function buildDaySummaries(rates: BookingRate[]): Map<string, RateDaySummary> {
+function pctBgBorder(pct: number | null) {
+  if (pct === null) return { cellBg: 'var(--surface-h)', borderColor: 'var(--border-l)', pctColor: 'var(--text-m)' };
+  if (pct < 0)   return { cellBg: 'var(--green-l)', borderColor: '#A7F3D0', pctColor: 'var(--green)' };
+  if (pct <= 30) return { cellBg: 'var(--amber-l)', borderColor: '#FDE68A', pctColor: 'var(--amber)' };
+  return               { cellBg: 'var(--red-l)',   borderColor: '#FECACA', pctColor: 'var(--red)'   };
+}
+
+/**
+ * Build per-day summaries filtered to a specific `selectedPersons` capacity.
+ * - clientMin: cheapest client rate for that capacity (null if client has no room at this pax)
+ * - competitorMin: cheapest competitor rate for same capacity
+ * - clientHasPax: whether the client has any room with this exact maxPersons
+ */
+function buildDaySummaries(
+  rates: BookingRate[],
+  selectedPersons: number,
+): Map<string, RateDaySummary & { clientHasPax: boolean }> {
   const byDate = new Map<string, BookingRate[]>();
   for (const r of rates) {
     const list = byDate.get(r.checkinDate) ?? [];
@@ -24,23 +42,17 @@ function buildDaySummaries(rates: BookingRate[]): Map<string, RateDaySummary> {
     byDate.set(r.checkinDate, list);
   }
 
-  const result = new Map<string, RateDaySummary>();
+  const result = new Map<string, RateDaySummary & { clientHasPax: boolean }>();
   for (const [date, dayRates] of byDate) {
     const clientRates = dayRates.filter(r => r.type === 'cliente');
     const compRates   = dayRates.filter(r => r.type === 'concorrente');
 
-    // Reference capacity = minimum maxPersons the client offers for this day.
-    // Both client and competitors are filtered to this same capacity for a fair comparison.
-    const refPersons = clientRates.length > 0
-      ? Math.min(...clientRates.map(r => r.maxPersons)) : null;
-
-    const clientFiltered = refPersons !== null
-      ? clientRates.filter(r => r.maxPersons === refPersons) : clientRates;
-    const clientMin = clientFiltered.length > 0
+    const clientFiltered = clientRates.filter(r => r.maxPersons === selectedPersons);
+    const clientHasPax   = clientFiltered.length > 0;
+    const clientMin      = clientHasPax
       ? Math.min(...clientFiltered.map(r => r.priceBrl)) : null;
 
-    const compFiltered = refPersons !== null
-      ? compRates.filter(r => r.maxPersons === refPersons) : compRates;
+    const compFiltered  = compRates.filter(r => r.maxPersons === selectedPersons);
     const competitorMin = compFiltered.length > 0
       ? Math.min(...compFiltered.map(r => r.priceBrl)) : null;
 
@@ -48,7 +60,15 @@ function buildDaySummaries(rates: BookingRate[]): Map<string, RateDaySummary> {
       clientMin !== null && competitorMin !== null && competitorMin > 0
         ? parseFloat((((clientMin - competitorMin) / competitorMin) * 100).toFixed(1)) : null;
 
-    result.set(date, { date, refPersons, clientMin, competitorMin, pctVsCompetitor, hasData: dayRates.length > 0 });
+    result.set(date, {
+      date,
+      refPersons: selectedPersons,
+      clientMin,
+      competitorMin,
+      pctVsCompetitor,
+      hasData: dayRates.length > 0,
+      clientHasPax,
+    });
   }
   return result;
 }
@@ -56,56 +76,46 @@ function buildDaySummaries(rates: BookingRate[]): Map<string, RateDaySummary> {
 // Monday-based calendar grid
 function buildCalendarDays(yearMonth: string): (string | null)[] {
   const [y, m] = yearMonth.split('-').map(Number);
-  const firstDay = new Date(y, m - 1, 1);
-  const lastDay  = new Date(y, m, 0).getDate();
+  const firstDay   = new Date(y, m - 1, 1);
+  const lastDay    = new Date(y, m, 0).getDate();
   const startOffset = (firstDay.getDay() + 6) % 7;
   const days: (string | null)[] = Array(startOffset).fill(null);
   for (let d = 1; d <= lastDay; d++) {
-    days.push(`${yearMonth}-${String(d).padStart(2, '0')}`);
+    days.push(`${yearMonth}-${String(d).padStart(2,'0')}`);
   }
   while (days.length % 7 !== 0) days.push(null);
   return days;
-}
-
-function pctBgBorder(pct: number | null): { cellBg: string; borderColor: string; pctColor: string } {
-  if (pct === null) return { cellBg: 'var(--surface-h)', borderColor: 'var(--border-l)', pctColor: 'var(--text-m)' };
-  if (pct < 0)   return { cellBg: 'var(--green-l)', borderColor: '#A7F3D0', pctColor: 'var(--green)' };
-  if (pct <= 30) return { cellBg: 'var(--amber-l)', borderColor: '#FDE68A', pctColor: 'var(--amber)' };
-  return               { cellBg: 'var(--red-l)',   borderColor: '#FECACA', pctColor: 'var(--red)'   };
 }
 
 // ─── CSV Download ─────────────────────────────────────────────────────
 
 function downloadCSV(
   yearMonth: string,
-  summaries: Map<string, RateDaySummary>,
+  selectedPersons: number,
+  summaries: Map<string, RateDaySummary & { clientHasPax: boolean }>,
   rates: BookingRate[],
   competitors: { slug: string; label: string }[],
 ) {
   const [y, m] = yearMonth.split('-').map(Number);
   const lastDay = new Date(y, m, 0).getDate();
   const dates: string[] = [];
-  for (let d = 1; d <= lastDay; d++) {
-    dates.push(`${yearMonth}-${String(d).padStart(2,'0')}`);
-  }
+  for (let d = 1; d <= lastDay; d++) dates.push(`${yearMonth}-${String(d).padStart(2,'0')}`);
 
-  // Build competitor min-price lookup: date → slug → min price
-  // Only include rates matching refPersons for that date (same capacity as client baseline)
+  // competitor min per date per slug at selectedPersons
   const compLookup = new Map<string, Map<string, number>>();
   for (const r of rates) {
-    if (r.type !== 'concorrente') continue;
-    const refPersons = summaries.get(r.checkinDate)?.refPersons ?? null;
-    if (refPersons !== null && r.maxPersons !== refPersons) continue;
+    if (r.type !== 'concorrente' || r.maxPersons !== selectedPersons) continue;
     const bySlug = compLookup.get(r.checkinDate) ?? new Map<string, number>();
     const cur = bySlug.get(r.slug);
     if (cur === undefined || r.priceBrl < cur) bySlug.set(r.slug, r.priceBrl);
     compLookup.set(r.checkinDate, bySlug);
   }
 
-  const headers = ['Data','Dia','Nossa Diária','% vs Concorrência', ...competitors.map(c => c.label)];
+  const headers = ['Data','Dia',`Nossa Diária (${selectedPersons} pax)`, '% vs Concorrência',
+    ...competitors.map(c => c.label)];
   const rows = dates.map(date => {
-    const s = summaries.get(date);
-    const d = new Date(date + 'T00:00:00');
+    const s   = summaries.get(date);
+    const d   = new Date(date + 'T00:00:00');
     const dia = DAY_LABELS3[d.getDay()];
     const nossa = s?.clientMin != null ? s.clientMin.toFixed(2) : '';
     const pct   = s?.pctVsCompetitor != null ? `${s.pctVsCompetitor.toFixed(1)}%` : '';
@@ -116,54 +126,104 @@ function downloadCSV(
     return [date, dia, nossa, pct, ...compPrices];
   });
 
-  const csv = [headers, ...rows].map(row => row.map(v => `"${v}"`).join(',')).join('\n');
+  const csv  = [headers, ...rows].map(row => row.map(v => `"${v}"`).join(',')).join('\n');
   const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
   a.href     = url;
-  a.download = `rate-shopper-${yearMonth}.csv`;
+  a.download = `rate-shopper-${yearMonth}-${selectedPersons}pax.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
 
-// ─── Props ────────────────────────────────────────────────────────────
+// ─── Pax Filter ───────────────────────────────────────────────────────
 
-interface RateCalendarProps {
-  rates: BookingRate[];
-  loading: boolean;
-  yearMonth: string;
-  onMonthChange: (ym: string) => void;
+interface PaxFilterProps {
+  options:         number[];          // all unique maxPersons found in data
+  clientOptions:   Set<number>;       // maxPersons the client actually offers
+  selected:        number;
+  onSelect:        (p: number) => void;
+}
+
+function PaxFilter({ options, clientOptions, selected, onSelect }: PaxFilterProps) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1" style={{ color: 'var(--text-m)', marginRight: 2 }}>
+        <Users size={11} />
+        <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+          Pax
+        </span>
+      </div>
+      {options.map(p => {
+        const isActive  = p === selected;
+        const hasClient = clientOptions.has(p);
+        return (
+          <button
+            key={p}
+            onClick={() => onSelect(p)}
+            title={hasClient ? `${p} pessoas` : `${p} pessoas (cliente não oferece)`}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3,
+              padding: '3px 9px', borderRadius: 6, fontSize: 11, fontWeight: 700,
+              cursor: 'pointer', transition: 'all 0.15s',
+              border: isActive
+                ? `1.5px solid ${hasClient ? 'var(--accent)' : 'var(--border)' }`
+                : '1px solid var(--border)',
+              background: isActive
+                ? hasClient ? 'rgba(var(--accent-rgb),0.10)' : 'var(--surface-2)'
+                : 'transparent',
+              color: isActive
+                ? hasClient ? 'var(--accent)' : 'var(--text-m)'
+                : hasClient ? 'var(--text-m)' : 'var(--border)',
+              opacity: !hasClient && !isActive ? 0.5 : 1,
+            }}
+          >
+            {p}
+            {!hasClient && (
+              <span style={{
+                fontSize: 8, background: 'var(--surface-2)', color: 'var(--text-m)',
+                borderRadius: 3, padding: '0 3px', marginLeft: 1,
+              }}>
+                sem cliente
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 // ─── Table View ───────────────────────────────────────────────────────
 
 interface TableViewProps {
-  yearMonth: string;
-  summaries: Map<string, RateDaySummary>;
-  rates: BookingRate[];
-  competitors: { slug: string; label: string }[];
-  today: string;
-  onSelectDate: (d: string) => void;
+  yearMonth:       string;
+  selectedPersons: number;
+  summaries:       Map<string, RateDaySummary & { clientHasPax: boolean }>;
+  rates:           BookingRate[];
+  competitors:     { slug: string; label: string }[];
+  today:           string;
+  onSelectDate:    (d: string) => void;
 }
 
-function TableView({ yearMonth, summaries, rates, competitors, today, onSelectDate }: TableViewProps) {
-  const [y, m] = yearMonth.split('-').map(Number);
-  const lastDay = new Date(y, m, 0).getDate();
+function TableView({
+  yearMonth, selectedPersons, summaries, rates, competitors, today, onSelectDate,
+}: TableViewProps) {
+  const [, m] = yearMonth.split('-').map(Number);
+  const lastDay = new Date(+yearMonth.slice(0,4), m, 0).getDate();
 
-  // competitor min per date per slug — filtered to same refPersons as client baseline
+  // competitor min per date per slug at selectedPersons
   const compLookup = useMemo(() => {
     const map = new Map<string, Map<string, number>>();
     for (const r of rates) {
-      if (r.type !== 'concorrente') continue;
-      const refPersons = summaries.get(r.checkinDate)?.refPersons ?? null;
-      if (refPersons !== null && r.maxPersons !== refPersons) continue;
+      if (r.type !== 'concorrente' || r.maxPersons !== selectedPersons) continue;
       const bySlug = map.get(r.checkinDate) ?? new Map<string, number>();
       const cur = bySlug.get(r.slug);
       if (cur === undefined || r.priceBrl < cur) bySlug.set(r.slug, r.priceBrl);
       map.set(r.checkinDate, bySlug);
     }
     return map;
-  }, [rates, summaries]);
+  }, [rates, selectedPersons]);
 
   const dates = useMemo(() => {
     const arr: string[] = [];
@@ -172,17 +232,9 @@ function TableView({ yearMonth, summaries, rates, competitors, today, onSelectDa
   }, [yearMonth, lastDay]);
 
   const th: React.CSSProperties = {
-    padding: '8px 12px',
-    fontSize: 10,
-    fontWeight: 700,
-    letterSpacing: '0.06em',
-    textTransform: 'uppercase',
-    color: 'var(--text-m)',
-    background: 'var(--surface-2)',
-    whiteSpace: 'nowrap',
-    position: 'sticky',
-    top: 0,
-    zIndex: 1,
+    padding: '8px 12px', fontSize: 10, fontWeight: 700, letterSpacing: '0.06em',
+    textTransform: 'uppercase', color: 'var(--text-m)', background: 'var(--surface-2)',
+    whiteSpace: 'nowrap', position: 'sticky', top: 0, zIndex: 1,
   };
 
   return (
@@ -192,11 +244,14 @@ function TableView({ yearMonth, summaries, rates, competitors, today, onSelectDa
           <tr>
             <th style={{ ...th, textAlign: 'left',   minWidth: 110 }}>Data</th>
             <th style={{ ...th, textAlign: 'center', minWidth: 48  }}>Dia</th>
-            <th style={{ ...th, textAlign: 'right',  minWidth: 100 }}>Nossa Diária</th>
-            <th style={{ ...th, textAlign: 'center', minWidth: 70  }}>% vs Comp.</th>
+            <th style={{ ...th, textAlign: 'right',  minWidth: 100 }}>
+              Nossa Diária
+              <span style={{ fontWeight: 400, opacity: 0.65, marginLeft: 4 }}>({selectedPersons} pax)</span>
+            </th>
+            <th style={{ ...th, textAlign: 'center', minWidth: 80  }}>% vs Comp.</th>
             {competitors.map(c => (
               <th key={c.slug} style={{ ...th, textAlign: 'right', minWidth: 100 }}>
-                {c.label.length > 18 ? c.label.slice(0, 16) + '…' : c.label}
+                {c.label.length > 18 ? c.label.slice(0,16) + '…' : c.label}
               </th>
             ))}
           </tr>
@@ -205,13 +260,14 @@ function TableView({ yearMonth, summaries, rates, competitors, today, onSelectDa
           {dates.map(date => {
             const s = summaries.get(date);
             const d = new Date(date + 'T00:00:00');
-            const dayNum  = d.getDate();
-            const dayName = DAY_LABELS3[d.getDay()];
+            const dayNum    = d.getDate();
+            const dayName   = DAY_LABELS3[d.getDay()];
             const isToday   = date === today;
             const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+            const hasPct    = s?.pctVsCompetitor != null;
+            const hasData   = s?.hasData ?? false;
+            const noClient  = hasData && s?.clientHasPax === false;
             const { pctColor } = pctBgBorder(s?.pctVsCompetitor ?? null);
-            const hasPct = s?.pctVsCompetitor !== null && s?.pctVsCompetitor !== undefined;
-            const hasData = (s?.hasData) ?? false;
 
             return (
               <tr
@@ -221,6 +277,7 @@ function TableView({ yearMonth, summaries, rates, competitors, today, onSelectDa
                   borderBottom: '1px solid var(--border-l)',
                   cursor: hasData ? 'pointer' : 'default',
                   background: isToday ? 'rgba(var(--accent-rgb),0.04)' : 'transparent',
+                  opacity: noClient ? 0.55 : 1,
                   transition: 'background 0.1s',
                 }}
                 onMouseEnter={e => { if (hasData) (e.currentTarget as HTMLTableRowElement).style.background = 'var(--surface-2)'; }}
@@ -228,11 +285,7 @@ function TableView({ yearMonth, summaries, rates, competitors, today, onSelectDa
               >
                 {/* Data */}
                 <td style={{ padding: '9px 12px', whiteSpace: 'nowrap' }}>
-                  <span style={{
-                    fontSize: 12,
-                    fontWeight: isToday ? 700 : 500,
-                    color: isToday ? 'var(--accent)' : 'var(--text)',
-                  }}>
+                  <span style={{ fontSize: 12, fontWeight: isToday ? 700 : 500, color: isToday ? 'var(--accent)' : 'var(--text)' }}>
                     {String(dayNum).padStart(2,'0')}/{String(m).padStart(2,'0')}
                   </span>
                   {isToday && (
@@ -245,11 +298,7 @@ function TableView({ yearMonth, summaries, rates, competitors, today, onSelectDa
 
                 {/* Dia */}
                 <td style={{ padding: '9px 12px', textAlign: 'center' }}>
-                  <span style={{
-                    fontSize: 11,
-                    fontWeight: isWeekend ? 700 : 400,
-                    color: isWeekend ? 'var(--amber)' : 'var(--text-m)',
-                  }}>
+                  <span style={{ fontSize: 11, fontWeight: isWeekend ? 700 : 400, color: isWeekend ? 'var(--amber)' : 'var(--text-m)' }}>
                     {dayName}
                   </span>
                 </td>
@@ -257,11 +306,11 @@ function TableView({ yearMonth, summaries, rates, competitors, today, onSelectDa
                 {/* Nossa Diária */}
                 <td style={{ padding: '9px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
                   {s?.clientMin != null ? (
-                    <span style={{ fontWeight: 700, fontSize: 12, color: 'var(--text)' }}>
-                      {fmtBRL(s.clientMin)}
-                    </span>
+                    <span style={{ fontWeight: 700, fontSize: 12, color: 'var(--text)' }}>{fmtBRL(s.clientMin)}</span>
+                  ) : noClient ? (
+                    <span style={{ fontSize: 10, color: 'var(--text-m)', fontStyle: 'italic' }}>sem esse pax</span>
                   ) : (
-                    <span style={{ color: 'var(--text-m)', fontSize: 11 }}>—</span>
+                    <span style={{ color: 'var(--text-m)' }}>—</span>
                   )}
                 </td>
 
@@ -269,19 +318,15 @@ function TableView({ yearMonth, summaries, rates, competitors, today, onSelectDa
                 <td style={{ padding: '9px 12px', textAlign: 'center' }}>
                   {hasPct ? (
                     <span style={{
-                      display: 'inline-block',
-                      padding: '2px 7px',
-                      borderRadius: 4,
-                      fontSize: 11,
-                      fontWeight: 700,
-                      color: pctColor,
+                      display: 'inline-block', padding: '2px 7px', borderRadius: 4,
+                      fontSize: 11, fontWeight: 700, color: pctColor,
                       background: pctBgBorder(s!.pctVsCompetitor).cellBg,
                       border: `1px solid ${pctBgBorder(s!.pctVsCompetitor).borderColor}`,
                     }}>
                       {s!.pctVsCompetitor! >= 0 ? '+' : ''}{s!.pctVsCompetitor!.toFixed(0)}%
                     </span>
                   ) : (
-                    <span style={{ color: 'var(--text-m)', fontSize: 11 }}>—</span>
+                    <span style={{ color: 'var(--border)', fontSize: 11 }}>—</span>
                   )}
                 </td>
 
@@ -291,9 +336,7 @@ function TableView({ yearMonth, summaries, rates, competitors, today, onSelectDa
                   return (
                     <td key={c.slug} style={{ padding: '9px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
                       {price !== undefined ? (
-                        <span style={{ fontSize: 12, color: 'var(--text-m)' }}>
-                          {fmtBRL(price)}
-                        </span>
+                        <span style={{ fontSize: 12, color: 'var(--text-m)' }}>{fmtBRL(price)}</span>
                       ) : (
                         <span style={{ color: 'var(--border)', fontSize: 11 }}>—</span>
                       )}
@@ -309,27 +352,58 @@ function TableView({ yearMonth, summaries, rates, competitors, today, onSelectDa
   );
 }
 
-// ─── Main Component ────────────────────────────────────────────────────
+// ─── Main Component ───────────────────────────────────────────────────
 
 type ViewMode = 'calendar' | 'table';
 
-export default function RateCalendar({ rates, loading, yearMonth, onMonthChange }: RateCalendarProps) {
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [view, setView] = useState<ViewMode>('calendar');
+interface RateCalendarProps {
+  rates: BookingRate[];
+  loading: boolean;
+  yearMonth: string;
+  onMonthChange: (ym: string) => void;
+}
 
-  const summaries    = useMemo(() => buildDaySummaries(rates), [rates]);
+export default function RateCalendar({ rates, loading, yearMonth, onMonthChange }: RateCalendarProps) {
+  // All unique pax values across all rates for this month
+  const allPersonsOptions = useMemo(() => {
+    const set = new Set<number>();
+    for (const r of rates) set.add(r.maxPersons);
+    return [...set].sort((a, b) => a - b);
+  }, [rates]);
+
+  // Pax values the CLIENT offers
+  const clientPersonsSet = useMemo(() => {
+    const set = new Set<number>();
+    for (const r of rates) if (r.type === 'cliente') set.add(r.maxPersons);
+    return set;
+  }, [rates]);
+
+  // Default = minimum pax the client offers (falls back to first option overall)
+  const defaultPersons = useMemo(() => {
+    if (clientPersonsSet.size > 0) return Math.min(...clientPersonsSet);
+    return allPersonsOptions[0] ?? 2;
+  }, [clientPersonsSet, allPersonsOptions]);
+
+  const [selectedPersons, setSelectedPersons] = useState<number>(defaultPersons);
+  // Reset when month changes and brings new data
+  const [prevDefault, setPrevDefault] = useState<number>(defaultPersons);
+  if (defaultPersons !== prevDefault) {
+    setPrevDefault(defaultPersons);
+    setSelectedPersons(defaultPersons);
+  }
+
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [view, setView]                 = useState<ViewMode>('calendar');
+
+  const summaries    = useMemo(() => buildDaySummaries(rates, selectedPersons), [rates, selectedPersons]);
   const calendarDays = useMemo(() => buildCalendarDays(yearMonth), [yearMonth]);
 
-  // Unique competitors (preserve insertion order = first seen)
   const competitors = useMemo(() => {
     const seen = new Map<string, string>();
-    for (const r of rates) {
-      if (r.type === 'concorrente' && !seen.has(r.slug)) seen.set(r.slug, r.label);
-    }
+    for (const r of rates) if (r.type === 'concorrente' && !seen.has(r.slug)) seen.set(r.slug, r.label);
     return [...seen.entries()].map(([slug, label]) => ({ slug, label }));
   }, [rates]);
 
-  // Last scrape timestamp
   const lastScrapedAt = useMemo(() => {
     if (rates.length === 0) return null;
     return rates.reduce((max, r) => r.scrapedAt > max ? r.scrapedAt : max, rates[0].scrapedAt);
@@ -337,49 +411,33 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange 
 
   const fmtScraped = (iso: string) => {
     const d = new Date(iso);
-    const day   = String(d.getDate()).padStart(2,'0');
-    const month = String(d.getMonth()+1).padStart(2,'0');
-    const hour  = String(d.getHours()).padStart(2,'0');
-    const min   = String(d.getMinutes()).padStart(2,'0');
-    return `${day}/${month} às ${hour}:${min}`;
+    return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')} às ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
   };
 
   const [y, m] = yearMonth.split('-').map(Number);
-  const today  = new Date().toISOString().slice(0, 10);
+  const today  = new Date().toISOString().slice(0,10);
 
-  const prevMonth = () => {
-    const pm = m === 1 ? 12 : m - 1;
-    const py = m === 1 ? y - 1 : y;
-    onMonthChange(`${py}-${String(pm).padStart(2,'0')}`);
-  };
-  const nextMonth = () => {
-    const nm = m === 12 ? 1  : m + 1;
-    const ny = m === 12 ? y + 1 : y;
-    onMonthChange(`${ny}-${String(nm).padStart(2,'0')}`);
-  };
+  const prevMonth = () => { const pm=m===1?12:m-1; const py=m===1?y-1:y; onMonthChange(`${py}-${String(pm).padStart(2,'0')}`); };
+  const nextMonth = () => { const nm=m===12?1:m+1;  const ny=m===12?y+1:y; onMonthChange(`${ny}-${String(nm).padStart(2,'0')}`); };
 
   const selectedDayRates = selectedDate ? rates.filter(r => r.checkinDate === selectedDate) : [];
   const hasAnyData = rates.length > 0;
 
-  // ── Toggle button style ──────────────────────────────────────────────
   const toggleBtn = (active: boolean): React.CSSProperties => ({
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    width: 30, height: 30, borderRadius: 6,
+    width: 30, height: 30, borderRadius: 6, cursor: 'pointer', transition: 'all 0.15s',
     border: active ? '1.5px solid var(--accent)' : '1px solid var(--border)',
     background: active ? 'rgba(var(--accent-rgb),0.08)' : 'transparent',
-    cursor: 'pointer', transition: 'all 0.15s', flexShrink: 0,
   });
 
   return (
     <>
       <div style={{
-        background: 'var(--surface)',
-        border: '1px solid var(--border)',
-        borderRadius: 'var(--r)',
-        padding: '20px 24px',
+        background: 'var(--surface)', border: '1px solid var(--border)',
+        borderRadius: 'var(--r)', padding: '20px 24px',
       }}>
-        {/* ── Header ── */}
-        <div className="flex items-center justify-between" style={{ marginBottom: 20 }}>
+        {/* ── Header row 1: title + controls ── */}
+        <div className="flex items-center justify-between" style={{ marginBottom: 14 }}>
           <div>
             <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.2px' }}>
               Rate Shopper
@@ -390,63 +448,41 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange 
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Last update badge */}
             {lastScrapedAt && (
-              <div
-                className="flex items-center gap-1.5"
-                style={{
-                  padding: '5px 11px', borderRadius: 'var(--rx)',
-                  background: 'var(--bg)', border: '1px solid var(--border-l)',
-                }}
-              >
+              <div className="flex items-center gap-1.5" style={{
+                padding: '5px 11px', borderRadius: 'var(--rx)',
+                background: 'var(--bg)', border: '1px solid var(--border-l)',
+              }}>
                 <RefreshCw size={10} style={{ color: 'var(--green)', flexShrink: 0 }} />
                 <span style={{ fontSize: 10.5, color: 'var(--text-m)', fontWeight: 500 }}>
                   Atualizado{' '}
-                  <strong style={{ color: 'var(--text)', fontWeight: 700 }}>
-                    {fmtScraped(lastScrapedAt)}
-                  </strong>
+                  <strong style={{ color: 'var(--text)', fontWeight: 700 }}>{fmtScraped(lastScrapedAt)}</strong>
                 </span>
               </div>
             )}
 
-            {/* Month navigation */}
+            {/* Month nav */}
             <div className="flex items-center gap-1">
-              <button
-                onClick={prevMonth}
-                className="flex items-center justify-center transition-colors hover:bg-[var(--surface-h)]"
-                style={{ width: 28, height: 28, border: '1px solid var(--border)', borderRadius: 'var(--rx)' }}
-              >
+              <button onClick={prevMonth} style={{ width: 28, height: 28, border: '1px solid var(--border)', borderRadius: 'var(--rx)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', background:'transparent' }}>
                 <ChevronLeft size={14} style={{ color: 'var(--text-m)' }} />
               </button>
               <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', minWidth: 130, textAlign: 'center' }}>
                 {MONTH_LABELS[m - 1]} {y}
               </span>
-              <button
-                onClick={nextMonth}
-                className="flex items-center justify-center transition-colors hover:bg-[var(--surface-h)]"
-                style={{ width: 28, height: 28, border: '1px solid var(--border)', borderRadius: 'var(--rx)' }}
-              >
+              <button onClick={nextMonth} style={{ width: 28, height: 28, border: '1px solid var(--border)', borderRadius: 'var(--rx)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', background:'transparent' }}>
                 <ChevronRight size={14} style={{ color: 'var(--text-m)' }} />
               </button>
             </div>
 
             {/* Divider */}
-            <div style={{ width: 1, height: 20, background: 'var(--border)', marginLeft: 4, marginRight: 2 }} />
+            <div style={{ width: 1, height: 20, background: 'var(--border)' }} />
 
             {/* Calendar / Table toggle */}
             <div className="flex items-center gap-1">
-              <button
-                title="Visualização calendário"
-                style={toggleBtn(view === 'calendar')}
-                onClick={() => setView('calendar')}
-              >
+              <button title="Calendário" style={toggleBtn(view === 'calendar')} onClick={() => setView('calendar')}>
                 <CalendarDays size={14} style={{ color: view === 'calendar' ? 'var(--accent)' : 'var(--text-m)' }} />
               </button>
-              <button
-                title="Visualização tabela"
-                style={toggleBtn(view === 'table')}
-                onClick={() => setView('table')}
-              >
+              <button title="Tabela" style={toggleBtn(view === 'table')} onClick={() => setView('table')}>
                 <Table2 size={14} style={{ color: view === 'table' ? 'var(--accent)' : 'var(--text-m)' }} />
               </button>
             </div>
@@ -454,16 +490,13 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange 
             {/* Download */}
             <button
               title="Baixar CSV"
-              onClick={() => downloadCSV(yearMonth, summaries, rates, competitors)}
+              onClick={() => downloadCSV(yearMonth, selectedPersons, summaries, rates, competitors)}
               disabled={!hasAnyData}
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                width: 30, height: 30, borderRadius: 6,
-                border: '1px solid var(--border)',
-                background: 'transparent',
-                cursor: hasAnyData ? 'pointer' : 'not-allowed',
-                opacity: hasAnyData ? 1 : 0.4,
-                transition: 'all 0.15s',
+                width: 30, height: 30, borderRadius: 6, border: '1px solid var(--border)',
+                background: 'transparent', cursor: hasAnyData ? 'pointer' : 'not-allowed',
+                opacity: hasAnyData ? 1 : 0.4, transition: 'all 0.15s',
               }}
               onMouseEnter={e => { if (hasAnyData) (e.currentTarget as HTMLButtonElement).style.background = 'var(--surface-h)'; }}
               onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
@@ -472,6 +505,32 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange 
             </button>
           </div>
         </div>
+
+        {/* ── Header row 2: Pax filter ── */}
+        {hasAnyData && allPersonsOptions.length > 0 && (
+          <div style={{
+            display: 'flex', alignItems: 'center',
+            padding: '8px 12px', marginBottom: 16, borderRadius: 8,
+            background: 'var(--surface-2)', border: '1px solid var(--border-l)',
+            gap: 10,
+          }}>
+            <PaxFilter
+              options={allPersonsOptions}
+              clientOptions={clientPersonsSet}
+              selected={selectedPersons}
+              onSelect={setSelectedPersons}
+            />
+            {!clientPersonsSet.has(selectedPersons) && (
+              <span style={{
+                fontSize: 10, color: 'var(--amber)', fontWeight: 500,
+                padding: '2px 7px', borderRadius: 4,
+                background: 'var(--amber-l)', border: '1px solid #FDE68A', marginLeft: 'auto',
+              }}>
+                Cliente não oferece quartos para {selectedPersons} pessoas neste mês
+              </span>
+            )}
+          </div>
+        )}
 
         {/* ── Content ── */}
         {loading ? (
@@ -488,9 +547,9 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange 
             </span>
           </div>
         ) : view === 'table' ? (
-          /* ── TABLE VIEW ── */
           <TableView
             yearMonth={yearMonth}
+            selectedPersons={selectedPersons}
             summaries={summaries}
             rates={rates}
             competitors={competitors}
@@ -498,27 +557,26 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange 
             onSelectDate={setSelectedDate}
           />
         ) : (
-          /* ── CALENDAR VIEW ── */
           <>
+            {/* Weekday labels */}
             <div className="grid grid-cols-7 gap-1" style={{ marginBottom: 4 }}>
               {DAY_LABELS.map(d => (
                 <div key={d} style={{
-                  textAlign: 'center', fontSize: 10, fontWeight: 600,
-                  color: 'var(--text-m)', textTransform: 'uppercase',
-                  letterSpacing: '0.4px', padding: '4px 0',
-                }}>
-                  {d}
-                </div>
+                  textAlign: 'center', fontSize: 10, fontWeight: 600, color: 'var(--text-m)',
+                  textTransform: 'uppercase', letterSpacing: '0.4px', padding: '4px 0',
+                }}>{d}</div>
               ))}
             </div>
 
+            {/* Day cells */}
             <div className="grid grid-cols-7 gap-1">
               {calendarDays.map((date, i) => {
                 if (!date) return <div key={`pad-${i}`} />;
 
-                const s = summaries.get(date);
-                const day = parseInt(date.slice(8));
-                const isToday = date === today;
+                const s         = summaries.get(date);
+                const day       = parseInt(date.slice(8));
+                const isToday   = date === today;
+                const noClient  = s?.hasData && s?.clientHasPax === false;
 
                 if (!s) {
                   return (
@@ -529,12 +587,34 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange 
                       textAlign: 'center', display: 'flex', flexDirection: 'column',
                       alignItems: 'center', justifyContent: 'space-between',
                     }}>
-                      <span style={{
-                        fontSize: 11, fontWeight: isToday ? 700 : 500,
-                        color: isToday ? 'var(--accent)' : '#8A96B4',
-                        alignSelf: 'flex-end', paddingRight: 2,
-                      }}>{day}</span>
+                      <span style={{ fontSize: 11, fontWeight: isToday ? 700 : 500, color: isToday ? 'var(--accent)' : '#8A96B4', alignSelf: 'flex-end', paddingRight: 2 }}>{day}</span>
                       <X size={14} strokeWidth={2.5} style={{ color: '#A0A8C0', marginBottom: 6 }} />
+                    </div>
+                  );
+                }
+
+                // Client has no room at this pax → grey cell regardless of competitors
+                if (noClient) {
+                  const compFiltered = rates.filter(r => r.type === 'concorrente' && r.checkinDate === date && r.maxPersons === selectedPersons);
+                  const compMin = compFiltered.length > 0 ? Math.min(...compFiltered.map(r => r.priceBrl)) : null;
+                  return (
+                    <div key={date} style={{
+                      background: 'var(--surface-2)',
+                      border: isToday ? '1.5px solid var(--accent)' : '1px solid var(--border-l)',
+                      borderRadius: 'var(--rx)', padding: '7px 5px', minHeight: 72,
+                      textAlign: 'center', display: 'flex', flexDirection: 'column',
+                      alignItems: 'center', justifyContent: 'space-between',
+                      opacity: 0.7,
+                    }}>
+                      <span style={{ fontSize: 11, fontWeight: isToday ? 700 : 400, color: isToday ? 'var(--accent)' : 'var(--text-m)', alignSelf: 'flex-end', paddingRight: 2 }}>{day}</span>
+                      <div style={{ textAlign: 'center' }}>
+                        {compMin !== null && (
+                          <div style={{ fontSize: 10, color: 'var(--text-m)', fontFamily: 'var(--mono)' }}>
+                            {fmtBRL(compMin)}
+                          </div>
+                        )}
+                        <div style={{ fontSize: 8, color: 'var(--text-m)', marginTop: 2 }}>sem {selectedPersons} pax</div>
+                      </div>
                     </div>
                   );
                 }
@@ -555,18 +635,12 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange 
                       minHeight: 72, textAlign: 'center', transition: 'box-shadow 0.15s',
                     }}
                   >
-                    <div style={{
-                      fontSize: 11, fontWeight: isToday ? 700 : 500,
-                      color: isToday ? 'var(--accent)' : 'var(--text-s)', marginBottom: 5,
-                    }}>
+                    <div style={{ fontSize: 11, fontWeight: isToday ? 700 : 500, color: isToday ? 'var(--accent)' : 'var(--text-s)', marginBottom: 5 }}>
                       {day}
                     </div>
                     {s.clientMin !== null ? (
                       <>
-                        <div style={{
-                          fontSize: 11, fontWeight: 700, color: 'var(--text)',
-                          fontFamily: 'var(--mono)', lineHeight: 1.2,
-                        }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--mono)', lineHeight: 1.2 }}>
                           {s.clientMin.toLocaleString('pt-BR', { style:'currency', currency:'BRL', maximumFractionDigits:0 })}
                         </div>
                         {s.pctVsCompetitor !== null ? (
@@ -574,15 +648,11 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange 
                             {s.pctVsCompetitor >= 0 ? '+' : ''}{s.pctVsCompetitor.toFixed(0)}%
                           </div>
                         ) : (
-                          <div style={{ fontSize: 9, color: 'var(--text-m)', marginTop: 4 }}>
-                            sem concorrente
-                          </div>
+                          <div style={{ fontSize: 9, color: 'var(--text-m)', marginTop: 4 }}>sem concorrente</div>
                         )}
                       </>
                     ) : (
-                      <div style={{ fontSize: 9, color: 'var(--text-m)', marginTop: 4, lineHeight: 1.4 }}>
-                        só<br />concorrente
-                      </div>
+                      <div style={{ fontSize: 9, color: 'var(--text-m)', marginTop: 4, lineHeight: 1.4 }}>só<br />concorrente</div>
                     )}
                   </button>
                 );
@@ -590,30 +660,25 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange 
             </div>
 
             {/* Legend */}
-            <div
-              className="flex flex-wrap items-center gap-x-4 gap-y-2"
-              style={{ marginTop: 16, borderTop: '1px solid var(--border-l)', paddingTop: 12 }}
-            >
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2" style={{ marginTop: 16, borderTop: '1px solid var(--border-l)', paddingTop: 12 }}>
               <span style={{ fontSize: 10, color: 'var(--text-m)', fontWeight: 600 }}>Legenda:</span>
               <div className="flex items-center gap-1.5">
-                <span style={{
-                  width: 10, height: 10, borderRadius: 3, background: '#E2E4EE', border: '1px solid #CDD0DF',
-                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                }}>
-                  <X size={6} strokeWidth={3} style={{ color: '#A0A8C0' }} />
+                <span style={{ width:10, height:10, borderRadius:3, background:'#E2E4EE', border:'1px solid #CDD0DF', display:'inline-flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  <X size={6} strokeWidth={3} style={{ color:'#A0A8C0' }} />
                 </span>
                 <span style={{ fontSize: 10, color: 'var(--text-m)' }}>Sem dados</span>
               </div>
+              <div className="flex items-center gap-1.5">
+                <span style={{ width:10, height:10, borderRadius:3, background:'var(--surface-2)', border:'1px solid var(--border-l)', display:'inline-block', flexShrink:0, opacity:0.7 }} />
+                <span style={{ fontSize: 10, color: 'var(--text-m)' }}>Sem tarifa neste pax</span>
+              </div>
               {[
-                { color: 'var(--green)', bg: 'var(--green-l)', border: '#A7F3D0', label: 'Abaixo da concorrência' },
-                { color: 'var(--amber)', bg: 'var(--amber-l)', border: '#FDE68A', label: 'Até 30% acima' },
-                { color: 'var(--red)',   bg: 'var(--red-l)',   border: '#FECACA', label: 'Mais de 30% acima' },
+                { color:'var(--green)', bg:'var(--green-l)', border:'#A7F3D0', label:'Abaixo da concorrência' },
+                { color:'var(--amber)', bg:'var(--amber-l)', border:'#FDE68A', label:'Até 30% acima' },
+                { color:'var(--red)',   bg:'var(--red-l)',   border:'#FECACA', label:'Mais de 30% acima' },
               ].map(({ bg, border, color, label }) => (
                 <div key={label} className="flex items-center gap-1.5">
-                  <span style={{
-                    width: 10, height: 10, borderRadius: 3, background: bg, border: `1px solid ${border}`,
-                    display: 'inline-block', flexShrink: 0,
-                  }} />
+                  <span style={{ width:10, height:10, borderRadius:3, background:bg, border:`1px solid ${border}`, display:'inline-block', flexShrink:0 }} />
                   <span style={{ fontSize: 10, color }}>{label}</span>
                 </div>
               ))}
