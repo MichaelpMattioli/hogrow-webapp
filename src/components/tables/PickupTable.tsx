@@ -157,7 +157,7 @@ function ExtracaoCalendar({ available, selected, onSelect }: ExtracaoCalendarPro
                 {[...available].reverse().map(d => (
                   <button key={d} onClick={() => { onSelect(d); setCalYM(d.slice(0,7)); setOpen(false); }}
                     style={{
-                      fontSize:10.5, fontWeight:700, borderRadius:99, padding:'2px 8px', border:'none', cursor:'pointer',
+                      fontSize:10.5, fontWeight:700, borderRadius:99, padding:'2px 8px', cursor:'pointer',
                       background: d === selected ? 'var(--accent)' : 'var(--bg)',
                       color: d === selected ? '#fff' : 'var(--accent-d)',
                       border: `1px solid ${d === selected ? 'var(--accent)' : 'color-mix(in srgb,var(--accent) 30%,transparent)'}`,
