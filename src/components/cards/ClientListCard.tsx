@@ -1,9 +1,10 @@
-import { ChevronRight, TrendingUp, TrendingDown, Minus } from 'lucide-react';
-import type { HotelSummary } from '@/data/types';
+import { ChevronRight, TrendingUp, TrendingDown, Minus, Target } from 'lucide-react';
+import type { HotelSummary, HotelMeta } from '@/data/types';
 import { STATUS_CONFIG } from '@/lib/utils';
 
 interface ClientListCardProps {
   hotel: HotelSummary;
+  meta?: HotelMeta;
   onClick: () => void;
   delay?: number;
 }
@@ -101,66 +102,271 @@ function DeltaBadge({ delta, type, label }: DeltaBadgeProps) {
   );
 }
 
+// ─── YTD badge ────────────────────────────────────────────────────────
+
+function YtdBadge({ value }: { value: string | null }) {
+  if (!value) return null;
+  return (
+    <span
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 3,
+        fontSize: 9.5, fontWeight: 700,
+        color: 'var(--accent-d)',
+        background: 'var(--accent-l)',
+        borderRadius: 99,
+        padding: '2px 6px',
+      }}
+    >
+      <span style={{ fontSize: 8, fontWeight: 800, opacity: 0.7 }}>YTD</span>
+      {value}
+    </span>
+  );
+}
+
 // ─── KPI Tile ─────────────────────────────────────────────────────────
 
 interface KpiTileProps {
   label: string;
   value: string;
-  momDelta: number | null | undefined;
   yoyDelta: number | null | undefined;
-  momType: DeltaType;
   yoyType: DeltaType;
+  ytdValue?: string | null;   // formatted YTD value (e.g. "R$ 1.2M" or "68.5%")
   accent?: boolean;
-  sub?: string; // optional subtitle below value
+  sub?: string;
 }
 
-function KpiTile({ label, value, momDelta, yoyDelta, momType, yoyType, accent, sub }: KpiTileProps) {
+function KpiTile({ label, value, yoyDelta, yoyType, ytdValue, accent, sub }: KpiTileProps) {
   const missing = value === '?';
   return (
     <div
       style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 4,
+        display: 'flex', flexDirection: 'column', gap: 4,
         padding: '12px 14px',
         background: accent ? 'var(--accent-l)' : 'var(--bg)',
         borderRadius: 'var(--rx)',
         border: `1px solid ${accent ? 'color-mix(in srgb, var(--accent) 18%, transparent)' : 'var(--border-l)'}`,
       }}
     >
-      <span
-        style={{
-          fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase',
-          letterSpacing: '0.6px',
-          color: accent ? 'var(--accent-d)' : 'var(--text-m)',
-        }}
-      >
+      <span style={{ fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: accent ? 'var(--accent-d)' : 'var(--text-m)' }}>
         {label}
       </span>
 
-      <span
-        style={{
-          fontSize: 20, fontWeight: 800, letterSpacing: '-0.8px', lineHeight: 1,
-          color: missing
-            ? 'var(--text-m)'
-            : accent
-              ? 'var(--accent-d)'
-              : 'var(--text)',
-          fontFamily: 'var(--mono)',
-        }}
-      >
+      <span style={{
+        fontSize: 20, fontWeight: 800, letterSpacing: '-0.8px', lineHeight: 1,
+        color: missing ? 'var(--text-m)' : accent ? 'var(--accent-d)' : 'var(--text)',
+        fontFamily: 'var(--mono)',
+      }}>
         {value}
       </span>
 
-      {sub && (
-        <span style={{ fontSize: 9.5, color: 'var(--text-m)', marginTop: -2 }}>
-          {sub}
-        </span>
-      )}
+      {sub && <span style={{ fontSize: 9.5, color: 'var(--text-m)', marginTop: -2 }}>{sub}</span>}
 
       <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 2 }}>
-        <DeltaBadge delta={momDelta} type={momType} label="MoM" />
-        <DeltaBadge delta={yoyDelta} type={yoyType} label="YoY" />
+        <DeltaBadge delta={yoyDelta} type={yoyType} label="a/a" />
+        <YtdBadge value={ytdValue ?? null} />
+      </div>
+    </div>
+  );
+}
+
+// ─── Meta strip (IO-style) ────────────────────────────────────────────
+
+// How far we are through the current month (0–1), used for "previsto"
+function monthElapsedRatio(): number {
+  const now  = new Date();
+  const day  = now.getDate();
+  const days = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  return day / days;
+}
+
+interface MetaPanelProps {
+  title: string;
+  metaVal:   number | null;   // target
+  actual:    number | null;   // current actual
+  fmt:       (v: number) => string;
+  unit?:     string;          // suffix for display (e.g. '%')
+  isCurrency?: boolean;
+}
+
+function MetaPanel({ title, metaVal, actual, fmt, isCurrency }: MetaPanelProps) {
+  if (!ok(metaVal) || metaVal <= 0) return null;
+
+  const elapsed  = monthElapsedRatio();
+  const realPct  = ok(actual) ? (actual / metaVal) * 100 : 0;           // % achieved
+  const prevPct  = elapsed * 100;                                         // % expected by now
+  const surplus  = ok(actual) ? actual - metaVal : null;                  // positive = superou
+  const surpassed = ok(surplus) && surplus > 0;
+  const barPct   = Math.min(realPct, 100);
+
+  const color = realPct >= 100
+    ? 'var(--green)'
+    : realPct >= prevPct * 0.9
+      ? 'var(--green)'
+      : realPct >= prevPct * 0.7
+        ? 'var(--gold)'
+        : 'var(--red)';
+
+  return (
+    <div
+      style={{
+        flex: 1, minWidth: 0,
+        background: 'var(--bg)',
+        border: '1px solid var(--border-l)',
+        borderRadius: 'var(--rx)',
+        padding: '12px 14px',
+        display: 'flex', flexDirection: 'column', gap: 10,
+      }}
+    >
+      {/* Title */}
+      <span style={{
+        fontSize: 10, fontWeight: 800, textTransform: 'uppercase',
+        letterSpacing: '0.6px', color: 'var(--text-m)',
+      }}>
+        {title}
+      </span>
+
+      {/* Numbers row: META | ATUAL | RESTAM/SUPEROU */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 4 }}>
+        {/* META */}
+        <div>
+          <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-m)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 3 }}>
+            Meta
+          </div>
+          <div style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--mono)', lineHeight: 1 }}>
+            {fmt(metaVal)}
+          </div>
+        </div>
+        {/* ATUAL */}
+        <div>
+          <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-m)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 3 }}>
+            {isCurrency ? 'Receita' : title}
+          </div>
+          <div style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--mono)', lineHeight: 1 }}>
+            {ok(actual) ? fmt(actual) : '—'}
+          </div>
+        </div>
+        {/* RESTAM / SUPEROU */}
+        <div>
+          <div style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 3, color: surpassed ? 'var(--green)' : 'var(--red)' }}>
+            {surpassed ? 'Superou ↑' : 'Restam ↓'}
+          </div>
+          <div style={{ fontSize: 11.5, fontWeight: 800, fontFamily: 'var(--mono)', lineHeight: 1, color: surpassed ? 'var(--green)' : 'var(--text)' }}>
+            {ok(surplus) ? fmt(Math.abs(surplus)) : '—'}
+          </div>
+        </div>
+      </div>
+
+      {/* Progress bar */}
+      <div>
+        <div style={{ position: 'relative', height: 12, background: 'var(--border-l)', borderRadius: 99, overflow: 'hidden' }}>
+          {/* Previsto marker (expected by now) */}
+          <div
+            style={{
+              position: 'absolute', left: 0, top: 0, bottom: 0,
+              width: `${Math.min(prevPct, 100)}%`,
+              background: 'color-mix(in srgb, var(--text-m) 18%, transparent)',
+              borderRadius: 99,
+            }}
+          />
+          {/* Realizado bar */}
+          <div
+            style={{
+              position: 'absolute', left: 0, top: 0, bottom: 0,
+              width: `${barPct}%`,
+              background: color,
+              borderRadius: 99,
+              transition: 'width .5s ease',
+              display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+              paddingRight: 6,
+              minWidth: realPct > 8 ? undefined : 0,
+            }}
+          />
+          {/* % label inside bar */}
+          {realPct > 12 && (
+            <span style={{
+              position: 'absolute', left: 0, top: 0, bottom: 0,
+              width: `${barPct}%`,
+              display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+              paddingRight: 5,
+              fontSize: 8.5, fontWeight: 800, color: '#fff',
+              fontFamily: 'var(--mono)',
+              pointerEvents: 'none',
+            }}>
+              {realPct.toFixed(1)}%
+            </span>
+          )}
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+          <span style={{ fontSize: 9, fontWeight: 700, color, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+            Realizado {realPct <= 12 ? `${realPct.toFixed(1)}%` : ''}
+          </span>
+          <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-m)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+            Previsto {prevPct.toFixed(0)}%
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface MetaStripProps {
+  meta: HotelMeta;
+  receita: number;
+  occ: number;
+  dm: number | null;
+}
+
+function MetaStrip({ meta, receita, occ, dm }: MetaStripProps) {
+  const hasAny = ok(meta.receitaMeta) || ok(meta.occMeta) || ok(meta.dmMeta);
+  if (!hasAny) return null;
+
+  const fmtR$Compact = (v: number) => {
+    if (v >= 1_000_000) return `R$ ${(v / 1_000_000).toFixed(1)}M`;
+    if (v >= 1_000)     return `R$ ${Math.round(v / 1_000)}k`;
+    return `R$ ${Math.round(v).toLocaleString('pt-BR')}`;
+  };
+  const fmtPctVal = (v: number) => `${v.toFixed(1)}%`;
+  const fmtDm     = (v: number) => `R$ ${Math.round(v).toLocaleString('pt-BR')}`;
+
+  return (
+    <div
+      style={{
+        marginTop: 12,
+        paddingTop: 14,
+        borderTop: '1px solid var(--border-l)',
+        display: 'flex', flexDirection: 'column', gap: 10,
+      }}
+    >
+      {/* Section header */}
+      <div className="flex items-center gap-1.5">
+        <Target size={11} style={{ color: 'var(--accent)' }} />
+        <span style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.6px', color: 'var(--accent)' }}>
+          Metas do mês
+        </span>
+      </div>
+
+      {/* 3 panels side by side */}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <MetaPanel
+          title="Receita"
+          metaVal={meta.receitaMeta}
+          actual={receita}
+          fmt={fmtR$Compact}
+          isCurrency
+        />
+        <MetaPanel
+          title="Ocupação"
+          metaVal={meta.occMeta}
+          actual={occ}
+          fmt={fmtPctVal}
+        />
+        <MetaPanel
+          title="Diária Média"
+          metaVal={meta.dmMeta}
+          actual={dm}
+          fmt={fmtDm}
+          isCurrency
+        />
       </div>
     </div>
   );
@@ -168,7 +374,7 @@ function KpiTile({ label, value, momDelta, yoyDelta, momType, yoyType, accent, s
 
 // ─── Card ─────────────────────────────────────────────────────────────
 
-export default function ClientListCard({ hotel, onClick, delay = 0 }: ClientListCardProps) {
+export default function ClientListCard({ hotel, meta, onClick, delay = 0 }: ClientListCardProps) {
   const cfg = STATUS_CONFIG[hotel.status];
 
   // ── Derived current values ──────────────────────────────────────────
@@ -180,16 +386,7 @@ export default function ClientListCard({ hotel, onClick, delay = 0 }: ClientList
     ? dm * hotel.occMesAtual / 100
     : null;
 
-  // ── Derived previous-month values ───────────────────────────────────
-  const dmMesAnterior = ok(hotel.ocupadosMesAnterior) && hotel.ocupadosMesAnterior > 0
-    ? hotel.receitaMesAnterior / hotel.ocupadosMesAnterior
-    : null;
-
-  const revparMesAnterior = ok(dmMesAnterior) && ok(hotel.occMesAnterior)
-    ? dmMesAnterior * hotel.occMesAnterior / 100
-    : null;
-
-  // ── Derived YoY values ──────────────────────────────────────────────
+  // ── YoY derived values ───────────────────────────────────────────────
   const dmAnoAnterior = ok(hotel.ocupadosAnoAnterior) && hotel.ocupadosAnoAnterior > 0
     ? hotel.receitaAnoAnterior / hotel.ocupadosAnoAnterior
     : null;
@@ -198,24 +395,25 @@ export default function ClientListCard({ hotel, onClick, delay = 0 }: ClientList
     ? dmAnoAnterior * hotel.occAnoAnterior / 100
     : null;
 
-  // ── Deltas ──────────────────────────────────────────────────────────
-  const recMom  = pctDelta(hotel.receitaMesAtual,    hotel.receitaMesAnterior);
-  const recYoy  = pctDelta(hotel.receitaMesAtual,    hotel.receitaAnoAnterior);
+  // ── YoY deltas ──────────────────────────────────────────────────────
+  const recYoy = pctDelta(hotel.receitaMesAtual,    hotel.receitaAnoAnterior);
+  const rdYoy  = pctDelta(hotel.recDiariasMesAtual, hotel.recDiariasAnoAnterior);
+  const dmYoy  = pctDelta(dm,                       dmAnoAnterior);
+  const occYoy = ppDelta(hotel.occMesAtual,          hotel.occAnoAnterior);
+  const rnYoy  = pctDelta(hotel.ocupadosMesAtual,   hotel.ocupadosAnoAnterior);
+  const rvYoy  = pctDelta(revpar,                   revparAnoAnterior);
 
-  const rdMom   = pctDelta(hotel.recDiariasMesAtual, hotel.recDiariasMesAnterior);
-  const rdYoy   = pctDelta(hotel.recDiariasMesAtual, hotel.recDiariasAnoAnterior);
+  // ── YTD values (formatted) ───────────────────────────────────────────
+  const revparYTD = ok(hotel.dmYTD) && ok(hotel.occAvgYTD)
+    ? hotel.dmYTD! * hotel.occAvgYTD / 100
+    : null;
 
-  const dmMom   = pctDelta(dm,    dmMesAnterior);
-  const dmYoy   = pctDelta(dm,    dmAnoAnterior);
-
-  const occMom  = ppDelta(hotel.occMesAtual,   hotel.occMesAnterior);
-  const occYoy  = ppDelta(hotel.occMesAtual,   hotel.occAnoAnterior);
-
-  const rnMom   = pctDelta(hotel.ocupadosMesAtual,  hotel.ocupadosMesAnterior);
-  const rnYoy   = pctDelta(hotel.ocupadosMesAtual,  hotel.ocupadosAnoAnterior);
-
-  const rvMom   = pctDelta(revpar,  revparMesAnterior);
-  const rvYoy   = pctDelta(revpar,  revparAnoAnterior);
+  const ytdReceita   = ok(hotel.receitaYTD)   ? fmtRec(hotel.receitaYTD)                  : null;
+  const ytdOcc       = ok(hotel.occAvgYTD)    ? fmtPct(hotel.occAvgYTD)                   : null;
+  const ytdDm        = ok(hotel.dmYTD)        ? fmtR$(hotel.dmYTD)                        : null;
+  const ytdRn        = ok(hotel.ocupadosYTD)  ? fmtN(hotel.ocupadosYTD)                   : null;
+  const ytdRevpar    = ok(revparYTD)           ? fmtR$(revparYTD)                          : null;
+  // recDiarias YTD not in view — skip
 
   // ── Misc display ────────────────────────────────────────────────────
   const now = new Date();
@@ -298,55 +496,59 @@ export default function ClientListCard({ hotel, onClick, delay = 0 }: ClientList
         <KpiTile
           label="Receita Total"
           value={fmtRec(hotel.receitaMesAtual)}
-          momDelta={recMom}
           yoyDelta={recYoy}
-          momType="pct"
           yoyType="pct"
+          ytdValue={ytdReceita}
           accent
         />
         <KpiTile
           label="Ocupação"
           value={fmtPct(hotel.occMesAtual)}
-          momDelta={occMom}
           yoyDelta={occYoy}
-          momType="pp"
           yoyType="pp"
+          ytdValue={ytdOcc}
         />
         <KpiTile
           label="Diária Média"
           value={fmtR$(dm)}
-          momDelta={dmMom}
           yoyDelta={dmYoy}
-          momType="pct"
           yoyType="pct"
+          ytdValue={ytdDm}
         />
         {/* Row 2 */}
         <KpiTile
           label="Rec. de Diárias"
           value={fmtRec(hotel.recDiariasMesAtual)}
-          momDelta={rdMom}
           yoyDelta={rdYoy}
-          momType="pct"
           yoyType="pct"
+          ytdValue={null}
         />
         <KpiTile
           label="Room Nights"
           value={fmtN(hotel.ocupadosMesAtual)}
-          momDelta={rnMom}
           yoyDelta={rnYoy}
-          momType="pct"
           yoyType="pct"
+          ytdValue={ytdRn}
           sub={cortesiaStr}
         />
         <KpiTile
           label="RevPAR"
           value={fmtR$(revpar)}
-          momDelta={rvMom}
           yoyDelta={rvYoy}
-          momType="pct"
           yoyType="pct"
+          ytdValue={ytdRevpar}
         />
       </div>
+
+      {/* ── Meta strip ── */}
+      {meta && (
+        <MetaStrip
+          meta={meta}
+          receita={hotel.receitaMesAtual}
+          occ={hotel.occMesAtual}
+          dm={dm}
+        />
+      )}
     </button>
   );
 }
