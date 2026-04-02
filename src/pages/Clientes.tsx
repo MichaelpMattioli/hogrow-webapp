@@ -1,33 +1,63 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useHotels } from '@/hooks/useSupabase';
+import { useHotels, useHotelMetas } from '@/hooks/useSupabase';
 import ClientListCard from '@/components/cards/ClientListCard';
 import { Loader2, ChevronDown } from 'lucide-react';
 import type { HotelSummary } from '@/data/types';
 
-type SortKey = 'dm' | 'occ' | 'revp' | 'mdUhDia' | 'hospTt';
+// ─── Sort options aligned with the 6 KPI tiles ────────────────────────
 
-const SORT_OPTIONS: { key: SortKey; label: string }[] = [
-  { key: 'dm',     label: 'DM C/C TT' },
-  { key: 'occ',    label: 'OCC TT' },
-  { key: 'revp',   label: 'REVP' },
-  { key: 'mdUhDia',label: 'MD UH/DIA' },
-  { key: 'hospTt', label: 'HOSP TT' },
+type SortKey = 'receita' | 'occ' | 'dm' | 'revpar' | 'roomNights' | 'recDiarias' | 'nome';
+
+interface SortOption {
+  key: SortKey;
+  label: string;
+  description: string;
+}
+
+const SORT_OPTIONS: SortOption[] = [
+  { key: 'receita',    label: 'Receita Total',    description: 'Maior receita no mês' },
+  { key: 'occ',        label: 'Ocupação',          description: 'Maior % de ocupação' },
+  { key: 'dm',         label: 'Diária Média',      description: 'Maior diária média' },
+  { key: 'revpar',     label: 'RevPAR',            description: 'Maior RevPAR' },
+  { key: 'roomNights', label: 'Room Nights',       description: 'Mais quartos ocupados' },
+  { key: 'recDiarias', label: 'Rec. de Diárias',   description: 'Maior receita de diárias' },
+  { key: 'nome',       label: 'Nome A → Z',         description: 'Ordem alfabética' },
 ];
 
-function getSortValue(h: HotelSummary, key: SortKey): number {
+function getSortValue(h: HotelSummary, key: SortKey): number | string {
   const dm = h.ocupadosMesAtual > 0 ? h.receitaMesAtual / h.ocupadosMesAtual : 0;
   switch (key) {
-    case 'dm':      return dm;
-    case 'occ':     return h.occMesAtual;
-    case 'revp':    return dm * h.occMesAtual / 100;
-    case 'mdUhDia': return h.diasMesAtual > 0 ? h.ocupadosMesAtual / h.diasMesAtual : 0;
-    case 'hospTt':  return h.hospedesMesAtual;
+    case 'receita':    return h.receitaMesAtual;
+    case 'occ':        return h.occMesAtual;
+    case 'dm':         return dm;
+    case 'revpar':     return dm * h.occMesAtual / 100;
+    case 'roomNights': return h.ocupadosMesAtual;
+    case 'recDiarias': return h.recDiariasMesAtual;
+    case 'nome':       return h.name.toLowerCase();
   }
 }
 
+function sortHotels(hotels: HotelSummary[], key: SortKey): HotelSummary[] {
+  return [...hotels].sort((a, b) => {
+    const av = getSortValue(a, key);
+    const bv = getSortValue(b, key);
+    if (typeof av === 'string') return av.localeCompare(bv as string);
+    return (bv as number) - (av as number);
+  });
+}
+
+// ─── Current month ────────────────────────────────────────────────────
+
+function currentMesAno() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────
+
 export default function Clientes() {
-  const [sort, setSort] = useState<SortKey>('dm');
+  const [sort, setSort] = useState<SortKey>('receita');
   const [open, setOpen] = useState(false);
   const dropRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
@@ -35,6 +65,7 @@ export default function Clientes() {
   const q = (searchParams.get('q') ?? '').toLowerCase().trim();
 
   const { hotels, loading, error } = useHotels();
+  const { metas } = useHotelMetas(currentMesAno());
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -69,8 +100,8 @@ export default function Clientes() {
       )
     : hotels;
 
-  const sorted = [...filtered].sort((a, b) => getSortValue(b, sort) - getSortValue(a, sort));
-  const activeLabel = SORT_OPTIONS.find(o => o.key === sort)!.label;
+  const sorted = sortHotels(filtered, sort);
+  const activeOption = SORT_OPTIONS.find(o => o.key === sort)!;
 
   return (
     <div className="fade-in">
@@ -80,12 +111,12 @@ export default function Clientes() {
           <p className="text-[13px] mt-0.5" style={{ color: 'var(--text-m)' }}>
             {q
               ? `${sorted.length} resultado${sorted.length !== 1 ? 's' : ''} para "${q}"`
-              : `${hotels.length} ${hotels.length === 1 ? 'hotel' : 'hotéis'} — clique para análise completa`
+              : `${hotels.length} ${hotels.length === 1 ? 'hotel' : 'hotéis'} · ordenado por ${activeOption.description}`
             }
           </p>
         </div>
 
-        {/* Dropdown Sort */}
+        {/* Sort dropdown */}
         <div ref={dropRef} style={{ position: 'relative' }}>
           <button
             className="flex items-center gap-0 text-xs rounded-[var(--rx)] transition-colors"
@@ -96,13 +127,13 @@ export default function Clientes() {
               className="font-medium"
               style={{ padding: '7px 10px 7px 14px', color: 'var(--text-m)', borderRight: '1px solid var(--border)' }}
             >
-              Ordenar
+              Ordenar por
             </span>
             <span
               className="flex items-center gap-1.5 font-bold"
               style={{ padding: '7px 12px', color: 'var(--accent-d)' }}
             >
-              {activeLabel}
+              {activeOption.label}
               <ChevronDown
                 size={13}
                 style={{ color: 'var(--text-m)', transition: 'transform .15s', transform: open ? 'rotate(180deg)' : 'none' }}
@@ -116,21 +147,25 @@ export default function Clientes() {
                 position: 'absolute', right: 0, top: 'calc(100% + 4px)',
                 background: 'var(--surface)', border: '1px solid var(--border)',
                 borderRadius: 'var(--r)', boxShadow: 'var(--sh-m)', zIndex: 50,
-                minWidth: 150, padding: '4px 0',
+                minWidth: 200, padding: '4px 0',
               }}
             >
               {SORT_OPTIONS.map(o => (
                 <button
                   key={o.key}
-                  className={`w-full text-left text-xs font-medium transition-colors ${sort !== o.key ? 'hover:bg-[var(--surface-h)]' : ''}`}
+                  className="w-full text-left transition-colors"
                   style={{
-                    padding: '8px 16px',
-                    color: sort === o.key ? 'var(--accent)' : 'var(--text)',
+                    padding: '9px 16px',
                     background: sort === o.key ? 'var(--accent-l)' : 'transparent',
                   }}
                   onClick={() => { setSort(o.key); setOpen(false); }}
                 >
-                  {o.label}
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: sort === o.key ? 'var(--accent)' : 'var(--text)' }}>
+                    {o.label}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-m)', marginTop: 1 }}>
+                    {o.description}
+                  </div>
                 </button>
               ))}
             </div>
@@ -146,17 +181,12 @@ export default function Clientes() {
             border: '1px solid var(--border)', borderRadius: 'var(--r)', textAlign: 'center',
           }}
         >
-          <div
-            className="flex items-center justify-center rounded-full mb-4"
-            style={{ width: 48, height: 48, background: 'var(--surface-h)' }}
-          >
-            <span style={{ fontSize: 22 }}>🏨</span>
-          </div>
+          <span style={{ fontSize: 36, marginBottom: 12 }}>🏨</span>
           <p className="font-semibold" style={{ fontSize: 14, color: 'var(--text)' }}>
             {q ? `Nenhum hotel encontrado para "${q}"` : 'Nenhum hotel cadastrado'}
           </p>
           <p className="mt-1" style={{ fontSize: 12.5, color: 'var(--text-m)' }}>
-            {q ? 'Tente outro nome ou cidade.' : 'Adicione um hotel para começar a análise.'}
+            {q ? 'Tente outro nome ou cidade.' : 'Adicione um hotel para começar.'}
           </p>
         </div>
       ) : (
@@ -165,8 +195,9 @@ export default function Clientes() {
             <ClientListCard
               key={h.id}
               hotel={h}
+              meta={metas.find(m => m.hotelId === h.id)}
               onClick={() => navigate(`/clientes/${h.id}`)}
-              delay={i * 50}
+              delay={i * 40}
             />
           ))}
         </div>
