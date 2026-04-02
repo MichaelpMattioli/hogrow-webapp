@@ -208,8 +208,9 @@ export interface BookingRate {
 // Computed per-day summary for the calendar cell
 export interface RateDaySummary {
   date: string;
-  clientMin: number | null;
-  competitorMin: number | null;
+  refPersons: number | null;      // min maxPersons the client offers — used as comparison baseline
+  clientMin: number | null;       // cheapest client rate for refPersons capacity
+  competitorMin: number | null;   // cheapest competitor rate for same refPersons capacity
   pctVsCompetitor: number | null; // positive = client more expensive
   hasData: boolean;
 }
