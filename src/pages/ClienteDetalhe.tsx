@@ -202,7 +202,6 @@ export default function ClienteDetalhe() {
           <p className="text-[13px] mt-0.5" style={{ color: 'var(--text-m)' }}>
             {summary.city}, {summary.state}
             {hoje ? ` · ${hoje.ocupados}/${hoje.totalUhs} UHs` : ` · ${summary.uhs} UHs`}
-            {summary.leitos && hoje ? ` · ${(hoje.pax ?? 0) + (hoje.chd ?? 0)}/${summary.leitos} leitos` : ''}
           </p>
         </div>
         {/* 3-dot menu */}
