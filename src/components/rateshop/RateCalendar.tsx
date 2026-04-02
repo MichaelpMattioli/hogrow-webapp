@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, X, RefreshCw, CalendarDays, Table2, Download, Users } from 'lucide-react';
 import type { BookingRate, RateDaySummary } from '@/data/types';
 import RateDayModal from './RateDayModal';
@@ -395,6 +395,15 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange 
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [view, setView]                 = useState<ViewMode>('calendar');
 
+  const containerRef    = useRef<HTMLDivElement>(null);
+  const [modalAnchorTop, setModalAnchorTop] = useState(0);
+
+  useEffect(() => {
+    if (selectedDate && containerRef.current) {
+      setModalAnchorTop(containerRef.current.getBoundingClientRect().top);
+    }
+  }, [selectedDate]);
+
   const summaries    = useMemo(() => buildDaySummaries(rates, selectedPersons), [rates, selectedPersons]);
   const calendarDays = useMemo(() => buildCalendarDays(yearMonth), [yearMonth]);
 
@@ -432,7 +441,7 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange 
 
   return (
     <>
-      <div style={{
+      <div ref={containerRef} style={{
         background: 'var(--surface)', border: '1px solid var(--border)',
         borderRadius: 'var(--r)', padding: '20px 24px',
       }}>
@@ -691,6 +700,7 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange 
         <RateDayModal
           date={selectedDate}
           rates={selectedDayRates}
+          anchorTop={modalAnchorTop}
           onClose={() => setSelectedDate(null)}
         />
       )}
