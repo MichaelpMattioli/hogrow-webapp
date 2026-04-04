@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { BedDouble, DollarSign, TrendingUp, BarChart3, Loader2, ArrowLeft, MoreVertical, Pencil, Percent, Users } from 'lucide-react';
 import MonthYearPicker from '@/components/ui/MonthYearPicker';
-import { useHotelDetail, updateHotel, usePickup, useBookingRates, usePickupAcumulado } from '@/hooks/useSupabase';
+import { useHotelDetail, updateHotel, usePickup, useBookingRates } from '@/hooks/useSupabase';
 import { getInsights } from '@/data/transforms';
 import { STATUS_CONFIG } from '@/lib/utils';
 import type { HotelRow } from '@/data/types';
@@ -25,7 +25,6 @@ export default function ClienteDetalhe() {
   const [selectedMeses, setSelectedMeses] = useState<string[]>([mesAtual]);
   const [rateMonth, setRateMonth] = useState(mesAtual);
   const { rates, loading: ratesLoading } = useBookingRates(Number(id), rateMonth);
-  const { rows: acumuladoRows, loading: acumuladoLoading } = usePickupAcumulado(Number(id), selectedMeses);
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -301,9 +300,8 @@ export default function ClienteDetalhe() {
       {/* Pick-up (Diário / Acumulado) */}
       <div style={{ marginBottom: 40 }}>
         <PickupSection
+          hotelId={Number(id)}
           pickupRows={pickupRows}
-          acumuladoRows={acumuladoRows}
-          acumuladoLoading={acumuladoLoading}
           selectedMeses={selectedMeses}
         />
       </div>

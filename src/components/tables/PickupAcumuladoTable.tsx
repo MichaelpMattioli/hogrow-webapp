@@ -1,318 +1,218 @@
-import React, { useMemo } from 'react';
-import { TrendingUp, TrendingDown, Minus, BedDouble } from 'lucide-react';
-import type { PickupAcumuladoRow } from '@/hooks/useSupabase';
+import React, { useState, useMemo } from 'react';
+import { ChevronLeft, ChevronRight, TrendingUp, TrendingDown } from 'lucide-react';
+import { usePickupAcumuladoMensal } from '@/hooks/useSupabase';
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 
 const MES_PT = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 const DIA_PT = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
 
+function fmtShort(iso: string) {
+  const [, m, d] = iso.split('-');
+  return `${d}/${m}`;
+}
 function fmtDate(iso: string) {
-  const d = new Date(iso + 'T00:00:00');
-  return {
-    dd:  String(d.getDate()).padStart(2, '0'),
-    mes: MES_PT[d.getMonth()],
-    dia: DIA_PT[d.getDay()],
-  };
+  const dt = new Date(iso + 'T00:00:00');
+  return { dd: String(dt.getDate()).padStart(2,'0'), mes: MES_PT[dt.getMonth()], dia: DIA_PT[dt.getDay()], dow: dt.getDay() };
 }
-
-function fmtBRL(v: number, compact = false): string {
-  if (compact) {
-    if (Math.abs(v) >= 1_000_000) return `R$${(v / 1_000_000).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}M`;
-    if (Math.abs(v) >= 1_000)     return `R$${Math.round(v / 1_000).toLocaleString('pt-BR')}k`;
-  }
-  return 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+function fmtBRL(v: number) {
+  const abs = Math.abs(v);
+  if (abs >= 1_000_000) return `R$${(v / 1_000_000).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})}M`;
+  if (abs >= 1_000)     return `R$${Math.round(v / 1_000).toLocaleString('pt-BR')}k`;
+  return `R$${Math.round(v).toLocaleString('pt-BR')}`;
 }
-function fmtPct(v: number) { return v.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%'; }
-
-function occColor(v: number) {
-  if (v >= 80) return 'var(--green)';
-  if (v >= 55) return 'var(--accent)';
-  if (v >= 30) return 'var(--amber)';
-  return 'var(--red)';
-}
-
 function deltaColor(v: number) {
-  if (v > 0) return 'var(--green)';
-  if (v < 0) return 'var(--red)';
-  return 'var(--text-m)';
+  return v > 0 ? 'var(--green)' : v < 0 ? 'var(--red)' : 'var(--text-m)';
 }
 
-function DeltaIcon({ v }: { v: number }) {
-  const size = 10;
-  if (v > 0) return <TrendingUp size={size} style={{ color: 'var(--green)', flexShrink: 0 }} />;
-  if (v < 0) return <TrendingDown size={size} style={{ color: 'var(--red)', flexShrink: 0 }} />;
-  return <Minus size={size} style={{ color: 'var(--text-m)', flexShrink: 0 }} />;
-}
-
-function DeltaCell({ v, fmt }: { v: number; fmt: (n: number) => string }) {
+function Delta({ v, fmt }: { v: number; fmt: (n: number) => string }) {
   if (v === 0) return <span style={{ color: 'var(--text-m)' }}>—</span>;
   return (
-    <span style={{ color: deltaColor(v), display: 'flex', alignItems: 'center', gap: 2, justifyContent: 'flex-end' }}>
-      <DeltaIcon v={v} />
+    <span style={{ display:'flex', alignItems:'center', gap:3, color: deltaColor(v), justifyContent:'flex-end' }}>
+      {v > 0 ? <TrendingUp size={10}/> : <TrendingDown size={10}/>}
       {v > 0 ? '+' : ''}{fmt(v)}
     </span>
   );
 }
 
-// ─── Month group header ────────────────────────────────────────────────
+// ─── Component ───────────────────────────────────────────────────────
 
-interface GroupHeaderProps {
-  mesAno: string;
-  rows:   PickupAcumuladoRow[];
-}
+interface Props { hotelId: number; }
 
-function GroupHeader({ mesAno, rows }: GroupHeaderProps) {
-  const [y, m] = mesAno.split('-').map(Number);
-  const label  = `${MES_PT[m - 1]} ${y}`;
-  const totalDias = rows.length;
+export default function PickupAcumuladoTable({ hotelId }: Props) {
+  const mesAtual = new Date().toISOString().slice(0, 7);
+  const [extracaoMes, setExtracaoMes] = useState(mesAtual);
 
-  // Use last row (latest data_referencia) for cumulative snapshot
-  const latest = rows[rows.length - 1];
+  const { rows, extracaoRange, loading } = usePickupAcumuladoMensal(hotelId, extracaoMes);
 
-  return (
-    <tr>
-      <td colSpan={9} style={{
-        background: 'var(--accent)',
-        padding: '6px 14px',
-        color: '#fff',
-        fontWeight: 700,
-        fontSize: 11,
-        letterSpacing: '0.05em',
-        textTransform: 'uppercase',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <span>{label}</span>
-          <span style={{ opacity: 0.8, fontWeight: 400 }}>{totalDias} dias com dados</span>
-          {latest && (
-            <>
-              <span style={{ opacity: 0.7 }}>·</span>
-              <span style={{ opacity: 0.85, fontWeight: 400 }}>
-                Pickup acum.: <strong>+{latest.pickupUhsAcumulado} UHs</strong>
-                {' · '}
-                <strong>{fmtBRL(latest.pickupReceitaAcumulado, true)}</strong>
-              </span>
-            </>
-          )}
-        </div>
-      </td>
-    </tr>
-  );
-}
+  const [y, m] = extracaoMes.split('-').map(Number);
 
-// ─── Row ──────────────────────────────────────────────────────────────
+  const prev = () => { const pm=m===1?12:m-1; const py=m===1?y-1:y; setExtracaoMes(`${py}-${String(pm).padStart(2,'0')}`); };
+  const next = () => { const nm=m===12?1:m+1;  const ny=m===12?y+1:y; setExtracaoMes(`${ny}-${String(nm).padStart(2,'0')}`); };
 
-const TODAY = new Date().toISOString().slice(0, 10);
+  const totals = useMemo(() => ({
+    deltaUhs:     rows.reduce((s, r) => s + r.deltaUhs, 0),
+    deltaReceita: rows.reduce((s, r) => s + r.deltaReceita, 0),
+  }), [rows]);
 
-function DataRow({ row }: { row: PickupAcumuladoRow }) {
-  const { dd, mes, dia } = fmtDate(row.dataReferencia);
-  const isFuture   = row.dataReferencia > TODAY;
-  const isWeekend  = new Date(row.dataReferencia + 'T00:00:00').getDay() % 6 === 0;
-  const rowOpacity = isFuture ? 0.55 : 1;
+  const today = new Date().toISOString().slice(0, 10);
 
-  const occBar = Math.min(100, row.occPct);
-
-  return (
-    <tr style={{ opacity: rowOpacity, borderBottom: '1px solid var(--border)' }}>
-      {/* Data */}
-      <td style={{ padding: '7px 14px', whiteSpace: 'nowrap' }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
-          <span style={{ fontWeight: 700, fontSize: 13, color: isFuture ? 'var(--accent)' : 'var(--text)' }}>
-            {dd}/{mes}
-          </span>
-          <span style={{
-            fontSize: 10,
-            color: isWeekend ? 'var(--amber)' : 'var(--text-m)',
-            fontWeight: isWeekend ? 600 : 400,
-          }}>
-            {dia}
-          </span>
-          {isFuture && (
-            <span style={{
-              fontSize: 9, background: 'rgba(var(--accent-rgb),0.12)', color: 'var(--accent)',
-              borderRadius: 3, padding: '1px 4px', fontWeight: 700, letterSpacing: '0.04em',
-            }}>FUTURO</span>
-          )}
-        </div>
-      </td>
-
-      {/* UHs Ocup / Total */}
-      <td style={{ padding: '7px 10px', textAlign: 'center' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
-          <BedDouble size={11} style={{ color: 'var(--text-m)', flexShrink: 0 }} />
-          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>
-            {row.uhsOcupadas}
-          </span>
-          <span style={{ fontSize: 10, color: 'var(--text-m)' }}>/ {row.uhsTotal}</span>
-        </div>
-      </td>
-
-      {/* Occ% with mini bar */}
-      <td style={{ padding: '7px 10px', textAlign: 'center', minWidth: 72 }}>
-        <div style={{ fontWeight: 700, fontSize: 12, color: occColor(row.occPct), marginBottom: 2 }}>
-          {fmtPct(row.occPct)}
-        </div>
-        <div style={{ height: 3, borderRadius: 2, background: 'var(--border)', overflow: 'hidden' }}>
-          <div style={{ height: '100%', width: `${occBar}%`, background: occColor(row.occPct), borderRadius: 2 }} />
-        </div>
-      </td>
-
-      {/* Receita Total */}
-      <td style={{ padding: '7px 10px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 12, color: 'var(--text)' }}>
-        {fmtBRL(row.recTotal, true)}
-      </td>
-
-      {/* ADR */}
-      <td style={{ padding: '7px 10px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 12, color: 'var(--text-m)' }}>
-        {fmtBRL(row.adr, false)}
-      </td>
-
-      {/* Pickup UHs dia | acum */}
-      <td style={{ padding: '7px 10px', textAlign: 'right' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 1, alignItems: 'flex-end' }}>
-          <DeltaCell v={row.pickupUhsDia} fmt={n => String(Math.abs(n))} />
-          <span style={{
-            fontSize: 10, color: row.pickupUhsAcumulado > 0 ? 'var(--green)' : row.pickupUhsAcumulado < 0 ? 'var(--red)' : 'var(--text-m)',
-            fontWeight: 700,
-          }}>
-            {row.pickupUhsAcumulado > 0 ? '+' : ''}{row.pickupUhsAcumulado} acum.
-          </span>
-        </div>
-      </td>
-
-      {/* Pickup Receita dia | acum */}
-      <td style={{ padding: '7px 10px', textAlign: 'right' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 1, alignItems: 'flex-end' }}>
-          <DeltaCell v={row.pickupReceitaDia} fmt={n => fmtBRL(Math.abs(n), true)} />
-          <span style={{
-            fontSize: 10,
-            color: row.pickupReceitaAcumulado > 0 ? 'var(--green)' : row.pickupReceitaAcumulado < 0 ? 'var(--red)' : 'var(--text-m)',
-            fontWeight: 700,
-          }}>
-            {row.pickupReceitaAcumulado > 0 ? '+' : ''}{fmtBRL(row.pickupReceitaAcumulado, true)} acum.
-          </span>
-        </div>
-      </td>
-
-      {/* Snapshots badge */}
-      <td style={{ padding: '7px 14px', textAlign: 'center' }}>
-        <span style={{
-          fontSize: 10, borderRadius: 4, padding: '1px 5px',
-          background: 'var(--surface-2)', color: 'var(--text-m)', fontVariantNumeric: 'tabular-nums',
-        }}>
-          {row.totalSnapshots}
-        </span>
-      </td>
-    </tr>
-  );
-}
-
-// ─── Main component ───────────────────────────────────────────────────
-
-interface Props {
-  rows:          PickupAcumuladoRow[];
-  selectedMeses: string[];
-  loading:       boolean;
-}
-
-export default function PickupAcumuladoTable({ rows, selectedMeses, loading }: Props) {
-  // Group rows by YYYY-MM, preserving selectedMeses order
-  const groups = useMemo<Array<{ mesAno: string; rows: PickupAcumuladoRow[] }>>(() => {
-    const byMonth = new Map<string, PickupAcumuladoRow[]>();
-    for (const r of rows) {
-      const m = r.dataReferencia.slice(0, 7);
-      const arr = byMonth.get(m) ?? [];
-      arr.push(r);
-      byMonth.set(m, arr);
-    }
-    const ordered = [...selectedMeses].sort();
-    return ordered
-      .filter(m => byMonth.has(m))
-      .map(m => ({ mesAno: m, rows: byMonth.get(m)! }));
-  }, [rows, selectedMeses]);
-
-  const card: React.CSSProperties = {
-    background:   'var(--surface)',
-    border:       '1px solid var(--border)',
-    borderRadius: 12,
-    overflow:     'hidden',
+  const th: React.CSSProperties = {
+    padding: '8px 12px', fontSize: 10, fontWeight: 700, letterSpacing: '0.06em',
+    textTransform: 'uppercase', color: 'var(--text-m)', background: 'var(--surface-2)',
+    whiteSpace: 'nowrap', position: 'sticky', top: 0, zIndex: 1, borderBottom: '1px solid var(--border-l)',
   };
 
-  const thStyle: React.CSSProperties = {
-    padding: '8px 10px',
-    fontSize: 10,
-    fontWeight: 700,
-    letterSpacing: '0.06em',
-    textTransform: 'uppercase',
-    color: 'var(--text-m)',
-    background: 'var(--surface-2)',
-    whiteSpace: 'nowrap',
-  };
-
-  if (loading) {
-    return (
-      <div style={card}>
-        <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-m)', fontSize: 13 }}>
-          Carregando pickup acumulado…
-        </div>
-      </div>
-    );
-  }
-
-  if (rows.length === 0) {
-    return (
-      <div style={card}>
-        <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-m)', fontSize: 13 }}>
-          Nenhum dado de pickup acumulado para o período selecionado.
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div style={card}>
-      {/* Header */}
+    <div style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:'var(--r)', overflow:'hidden' }}>
+
+      {/* ── Header ── */}
       <div style={{
-        padding: '12px 16px 10px',
-        borderBottom: '1px solid var(--border)',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
+        padding: '14px 16px', borderBottom: '1px solid var(--border)',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap',
       }}>
-        <TrendingUp size={14} style={{ color: 'var(--accent)' }} />
-        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>Pickup Acumulado</span>
-        <span style={{ fontSize: 11, color: 'var(--text-m)', marginLeft: 2 }}>
-          — visão dia a dia por extração mais recente
-        </span>
+        <div>
+          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>Pickup Acumulado</span>
+          <span style={{ fontSize: 11, color: 'var(--text-m)', marginLeft: 8 }}>
+            {extracaoRange
+              ? `extrações ${fmtShort(extracaoRange.first)} → ${fmtShort(extracaoRange.last)} · ${rows.length} noites`
+              : 'variação dentro do mês de extração'}
+          </span>
+        </div>
+
+        {/* Month navigation (extraction month) */}
+        <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+          <button onClick={prev} style={{ width:28, height:28, display:'flex', alignItems:'center', justifyContent:'center', border:'1px solid var(--border)', borderRadius:'var(--rx)', background:'transparent', cursor:'pointer' }}>
+            <ChevronLeft size={14} style={{ color:'var(--text-m)' }} />
+          </button>
+          <span style={{ fontSize:13, fontWeight:600, color:'var(--text)', minWidth:100, textAlign:'center' }}>
+            {MES_PT[m-1]} {y}
+          </span>
+          <button onClick={next} style={{ width:28, height:28, display:'flex', alignItems:'center', justifyContent:'center', border:'1px solid var(--border)', borderRadius:'var(--rx)', background:'transparent', cursor:'pointer' }}>
+            <ChevronRight size={14} style={{ color:'var(--text-m)' }} />
+          </button>
+        </div>
       </div>
 
-      {/* Table */}
-      <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-          <thead>
-            <tr>
-              <th style={{ ...thStyle, textAlign: 'left',   paddingLeft: 14  }}>Data</th>
-              <th style={{ ...thStyle, textAlign: 'center'                   }}>UHs Ocup.</th>
-              <th style={{ ...thStyle, textAlign: 'center'                   }}>Occ%</th>
-              <th style={{ ...thStyle, textAlign: 'right'                    }}>Receita</th>
-              <th style={{ ...thStyle, textAlign: 'right'                    }}>ADR</th>
-              <th style={{ ...thStyle, textAlign: 'right'                    }}>Pickup UHs</th>
-              <th style={{ ...thStyle, textAlign: 'right'                    }}>Pickup Rec.</th>
-              <th style={{ ...thStyle, textAlign: 'center', paddingRight: 14 }}>Fotos</th>
-            </tr>
-          </thead>
-          <tbody>
-            {groups.map(g => (
-              <React.Fragment key={g.mesAno}>
-                <GroupHeader mesAno={g.mesAno} rows={g.rows} />
-                {g.rows.map(r => (
-                  <DataRow key={r.dataReferencia} row={r} />
-                ))}
-              </React.Fragment>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {/* ── Summary strip ── */}
+      {rows.length > 0 && (
+        <div style={{
+          padding: '8px 16px', background: 'var(--bg)', borderBottom: '1px solid var(--border-l)',
+          display: 'flex', gap: 20, alignItems: 'center',
+        }}>
+          <span style={{ fontSize:10, fontWeight:700, color:'var(--text-m)', textTransform:'uppercase', letterSpacing:'0.05em' }}>
+            Total acumulado no mês:
+          </span>
+          <span style={{ fontSize:12, fontWeight:700, color: deltaColor(totals.deltaUhs) }}>
+            {totals.deltaUhs > 0 ? '+' : ''}{totals.deltaUhs} UHs
+          </span>
+          <span style={{ fontSize:12, fontWeight:700, color: deltaColor(totals.deltaReceita) }}>
+            {totals.deltaReceita >= 0 ? '+' : ''}{fmtBRL(totals.deltaReceita)}
+          </span>
+        </div>
+      )}
+
+      {/* ── Table ── */}
+      {loading ? (
+        <div style={{ padding:32, textAlign:'center', color:'var(--text-m)', fontSize:12 }}>
+          Carregando...
+        </div>
+      ) : rows.length === 0 ? (
+        <div style={{ padding:32, textAlign:'center', color:'var(--text-m)', fontSize:12 }}>
+          Nenhuma extração encontrada para {MES_PT[m-1]} {y}
+        </div>
+      ) : (
+        <div style={{ overflowX:'auto', overflowY:'auto', maxHeight:460 }}>
+          <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
+            <thead>
+              <tr>
+                <th style={{ ...th, textAlign:'left',   paddingLeft:16  }}>Data Ref.</th>
+                <th style={{ ...th, textAlign:'center'                   }}>Dia</th>
+                <th style={{ ...th, textAlign:'center'                   }}>
+                  Início
+                  {extracaoRange && <span style={{ fontWeight:400, opacity:.65, marginLeft:3 }}>({fmtShort(extracaoRange.first)})</span>}
+                </th>
+                <th style={{ ...th, textAlign:'center'                   }}>
+                  Fim
+                  {extracaoRange && <span style={{ fontWeight:400, opacity:.65, marginLeft:3 }}>({fmtShort(extracaoRange.last)})</span>}
+                </th>
+                <th style={{ ...th, textAlign:'right'                    }}>Δ UHs</th>
+                <th style={{ ...th, textAlign:'right'                    }}>Δ Receita</th>
+                <th style={{ ...th, textAlign:'right'                    }}>Δ Occ%</th>
+                <th style={{ ...th, textAlign:'center', paddingRight:16  }}>Fotos</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(r => {
+                const { dd, mes, dia, dow } = fmtDate(r.dataReferencia);
+                const isWeekend = dow === 0 || dow === 6;
+                const isFuture  = r.dataReferencia > today;
+
+                return (
+                  <tr key={r.dataReferencia}
+                    style={{ borderBottom:'1px solid var(--border-l)', opacity: isFuture ? 0.7 : 1 }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+
+                    {/* Data Ref */}
+                    <td style={{ padding:'8px 12px 8px 16px', whiteSpace:'nowrap' }}>
+                      <span style={{ fontWeight:700, fontSize:12, color: isFuture ? 'var(--accent)' : 'var(--text)' }}>
+                        {dd}/{mes}
+                      </span>
+                      {isFuture && (
+                        <span style={{ marginLeft:5, fontSize:8, background:'rgba(var(--accent-rgb),0.1)', color:'var(--accent)', borderRadius:3, padding:'1px 4px', fontWeight:700 }}>
+                          PREV.
+                        </span>
+                      )}
+                    </td>
+
+                    {/* Dia semana */}
+                    <td style={{ padding:'8px 12px', textAlign:'center' }}>
+                      <span style={{ fontSize:11, fontWeight: isWeekend ? 700 : 400, color: isWeekend ? 'var(--amber)' : 'var(--text-m)' }}>
+                        {dia}
+                      </span>
+                    </td>
+
+                    {/* Início snapshot */}
+                    <td style={{ padding:'8px 12px', textAlign:'center' }}>
+                      <div style={{ fontSize:12, fontWeight:600, color:'var(--text)' }}>
+                        {r.uhsFirst} <span style={{ fontSize:10, color:'var(--text-m)' }}>UHs</span>
+                      </div>
+                      <div style={{ fontSize:10, color:'var(--text-m)' }}>{r.occFirst.toFixed(1)}%</div>
+                    </td>
+
+                    {/* Fim snapshot */}
+                    <td style={{ padding:'8px 12px', textAlign:'center' }}>
+                      <div style={{ fontSize:12, fontWeight:600, color:'var(--text)' }}>
+                        {r.uhsLast} <span style={{ fontSize:10, color:'var(--text-m)' }}>UHs</span>
+                      </div>
+                      <div style={{ fontSize:10, color:'var(--text-m)' }}>{r.occLast.toFixed(1)}%</div>
+                    </td>
+
+                    {/* Deltas */}
+                    <td style={{ padding:'8px 12px', textAlign:'right', fontVariantNumeric:'tabular-nums' }}>
+                      <Delta v={r.deltaUhs} fmt={n => String(Math.abs(n))} />
+                    </td>
+                    <td style={{ padding:'8px 12px', textAlign:'right', fontVariantNumeric:'tabular-nums' }}>
+                      <Delta v={r.deltaReceita} fmt={n => fmtBRL(Math.abs(n))} />
+                    </td>
+                    <td style={{ padding:'8px 12px', textAlign:'right', fontVariantNumeric:'tabular-nums' }}>
+                      <Delta v={r.deltaOcc} fmt={n => `${Math.abs(n).toFixed(1)}pp`} />
+                    </td>
+
+                    {/* Snapshots count */}
+                    <td style={{ padding:'8px 16px 8px 12px', textAlign:'center' }}>
+                      <span style={{ fontSize:10, borderRadius:4, padding:'1px 5px', background:'var(--surface-2)', color:'var(--text-m)', fontVariantNumeric:'tabular-nums' }}>
+                        {r.totalSnapshots}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

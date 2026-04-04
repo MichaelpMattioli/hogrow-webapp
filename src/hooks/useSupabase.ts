@@ -418,95 +418,109 @@ export function usePickupSummary() {
   return { summaries, loading };
 }
 
-// ─── Pickup Acumulado ────────────────────────────────────────────────
+// ─── Pickup Acumulado Mensal ─────────────────────────────────────────
+// For each data_referencia, computes delta = last extraction of month − first extraction of month.
+// This gives the true within-month accumulated pickup (not since first-ever extraction).
 
-export interface PickupAcumuladoRow {
-  hotelId:               number;
-  dataReferencia:        string;   // YYYY-MM-DD
-  dataExtracao:          string;   // YYYY-MM-DD
-  uhsTotal:              number;
-  uhsOcupadas:           number;
-  occPct:                number;
-  reservas:              number;
-  checkins:              number;
-  checkouts:             number;
-  recTotal:              number;
-  recDiarias:            number;
-  adr:                   number;
-  revpar:                number;
-  pickupUhsDia:          number;
-  pickupUhsAcumulado:    number;
-  pickupReceitaDia:      number;
-  pickupReceitaAcumulado: number;
-  totalSnapshots:        number;
+export interface PickupMensalRow {
+  dataReferencia:    string;   // the night being analyzed
+  dataExtracaoFirst: string;   // first extraction captured in this month
+  dataExtracaoLast:  string;   // last extraction captured in this month
+  uhsTotal:          number;
+  uhsFirst:          number;   // UHs occupied at first extraction
+  uhsLast:           number;   // UHs occupied at last extraction
+  occFirst:          number;
+  occLast:           number;
+  recFirst:          number;
+  recLast:           number;
+  deltaUhs:          number;   // uhsLast − uhsFirst
+  deltaReceita:      number;   // recLast − recFirst
+  deltaOcc:          number;   // occLast − occFirst (pp)
+  totalSnapshots:    number;   // how many extractions captured this night in the month
 }
 
-function mesAnoToRange(mesAno: string): [string, string] {
-  const [y, m] = mesAno.split('-').map(Number);
-  const last = new Date(y, m, 0).getDate();
-  return [`${mesAno}-01`, `${mesAno}-${String(last).padStart(2, '0')}`];
-}
-
-export function usePickupAcumulado(hotelId: number, selectedMeses: string[]) {
-  const [rows, setRows]       = useState<PickupAcumuladoRow[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const key = selectedMeses.slice().sort().join(',');
+export function usePickupAcumuladoMensal(hotelId: number, extracaoMes: string) {
+  const [rows, setRows]             = useState<PickupMensalRow[]>([]);
+  const [extracaoRange, setRange]   = useState<{ first: string; last: string } | null>(null);
+  const [loading, setLoading]       = useState(true);
 
   useEffect(() => {
-    if (!hotelId || selectedMeses.length === 0) { setRows([]); setLoading(false); return; }
+    if (!hotelId || !extracaoMes) { setRows([]); setRange(null); setLoading(false); return; }
 
     async function load() {
       setLoading(true);
-      const ranges = selectedMeses.map(mesAnoToRange);
-      const from = ranges.reduce((min, [s]) => s < min ? s : min, ranges[0][0]);
-      const to   = ranges.reduce((max, [, e]) => e > max ? e : max, ranges[0][1]);
+      const [y, m] = extracaoMes.split('-').map(Number);
+      const from = `${extracaoMes}-01`;
+      const to   = `${extracaoMes}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;
 
       const { data, error } = await supabase
         .from('pickup_acumulado')
-        .select('*')
+        .select('hotel_id,data_referencia,data_extracao,uhs_total,uhs_ocupadas,occ_pct,rec_total,total_snapshots')
         .eq('hotel_id', hotelId)
-        .gte('data_referencia', from)
-        .lte('data_referencia', to)
+        .gte('data_extracao', from)
+        .lte('data_extracao', to)
         .order('data_referencia', { ascending: true })
         .order('data_extracao',   { ascending: true });
 
       if (!error && data) {
-        // Keep only the latest extraction per data_referencia
-        const latest = new Map<string, PickupAcumuladoRow>();
-        for (const r of data as Record<string, unknown>[]) {
-          const dr = r.data_referencia as string;
-          const parsed: PickupAcumuladoRow = {
-            hotelId:               r.hotel_id              as number,
-            dataReferencia:        dr,
-            dataExtracao:          r.data_extracao         as string,
-            uhsTotal:              (r.uhs_total            as number) ?? 0,
-            uhsOcupadas:           (r.uhs_ocupadas         as number) ?? 0,
-            occPct:                parseFloat(String(r.occ_pct))           || 0,
-            reservas:              (r.reservas             as number) ?? 0,
-            checkins:              (r.checkins             as number) ?? 0,
-            checkouts:             (r.checkouts            as number) ?? 0,
-            recTotal:              parseFloat(String(r.rec_total))          || 0,
-            recDiarias:            parseFloat(String(r.rec_diarias))        || 0,
-            adr:                   parseFloat(String(r.adr))                || 0,
-            revpar:                parseFloat(String(r.revpar))             || 0,
-            pickupUhsDia:          (r.pickup_uhs_dia       as number) ?? 0,
-            pickupUhsAcumulado:    (r.pickup_uhs_acumulado as number) ?? 0,
-            pickupReceitaDia:      parseFloat(String(r.pickup_receita_dia))      || 0,
-            pickupReceitaAcumulado: parseFloat(String(r.pickup_receita_acumulado)) || 0,
-            totalSnapshots:        (r.total_snapshots      as number) ?? 0,
-          };
-          // Always overwrite — since rows are ordered asc by data_extracao, last write = latest
-          latest.set(dr, parsed);
+        const raw = data as Record<string, unknown>[];
+
+        // Group all snapshots by data_referencia
+        const byRef = new Map<string, Array<{
+          dataExtracao: string; uhs: number; uhsTotal: number;
+          occ: number; rec: number; snaps: number;
+        }>>();
+        for (const r of raw) {
+          const dr  = r.data_referencia as string;
+          const arr = byRef.get(dr) ?? [];
+          arr.push({
+            dataExtracao: r.data_extracao as string,
+            uhs:     (r.uhs_ocupadas  as number) ?? 0,
+            uhsTotal:(r.uhs_total     as number) ?? 0,
+            occ:     parseFloat(String(r.occ_pct))  || 0,
+            rec:     parseFloat(String(r.rec_total)) || 0,
+            snaps:   (r.total_snapshots as number)  ?? 0,
+          });
+          byRef.set(dr, arr);
         }
-        setRows([...latest.values()].sort((a, b) => a.dataReferencia.localeCompare(b.dataReferencia)));
+
+        // Collect extraction date range for the month
+        const allExtracoes = [...new Set(raw.map(r => r.data_extracao as string))].sort();
+        setRange(allExtracoes.length > 0
+          ? { first: allExtracoes[0], last: allExtracoes[allExtracoes.length - 1] }
+          : null);
+
+        // Build per-referencia rows: delta = last − first within this extraction month
+        const result: PickupMensalRow[] = [];
+        for (const [dr, snaps] of byRef) {
+          const sorted = snaps.sort((a, b) => a.dataExtracao.localeCompare(b.dataExtracao));
+          const first  = sorted[0];
+          const last   = sorted[sorted.length - 1];
+          result.push({
+            dataReferencia:    dr,
+            dataExtracaoFirst: first.dataExtracao,
+            dataExtracaoLast:  last.dataExtracao,
+            uhsTotal:          last.uhsTotal,
+            uhsFirst:          first.uhs,
+            uhsLast:           last.uhs,
+            occFirst:          first.occ,
+            occLast:           last.occ,
+            recFirst:          first.rec,
+            recLast:           last.rec,
+            deltaUhs:          last.uhs  - first.uhs,
+            deltaReceita:      last.rec  - first.rec,
+            deltaOcc:          parseFloat((last.occ - first.occ).toFixed(1)),
+            totalSnapshots:    sorted.length,
+          });
+        }
+
+        setRows(result.sort((a, b) => a.dataReferencia.localeCompare(b.dataReferencia)));
       }
       setLoading(false);
     }
 
     load();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hotelId, key]);
+  }, [hotelId, extracaoMes]);
 
-  return { rows, loading };
+  return { rows, extracaoRange, loading };
 }

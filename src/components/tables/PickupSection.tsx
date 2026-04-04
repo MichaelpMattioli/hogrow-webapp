@@ -1,22 +1,18 @@
 import React, { useState } from 'react';
 import { List, TrendingUp } from 'lucide-react';
 import type { PickupRow } from '@/data/types';
-import type { PickupAcumuladoRow } from '@/hooks/useSupabase';
 import PickupTable from './PickupTable';
 import PickupAcumuladoTable from './PickupAcumuladoTable';
 
 type PickupView = 'diario' | 'acumulado';
 
 interface Props {
-  pickupRows:     PickupRow[];
-  acumuladoRows:  PickupAcumuladoRow[];
-  acumuladoLoading: boolean;
-  selectedMeses:  string[];
+  hotelId:       number;
+  pickupRows:    PickupRow[];
+  selectedMeses: string[];
 }
 
-export default function PickupSection({
-  pickupRows, acumuladoRows, acumuladoLoading, selectedMeses,
-}: Props) {
+export default function PickupSection({ hotelId, pickupRows, selectedMeses }: Props) {
   const [view, setView] = useState<PickupView>('diario');
 
   const toggleBtn = (active: boolean): React.CSSProperties => ({
@@ -61,11 +57,7 @@ export default function PickupSection({
       {view === 'diario' ? (
         <PickupTable data={pickupRows} selectedMonths={selectedMeses} />
       ) : (
-        <PickupAcumuladoTable
-          rows={acumuladoRows}
-          selectedMeses={selectedMeses}
-          loading={acumuladoLoading}
-        />
+        <PickupAcumuladoTable hotelId={hotelId} />
       )}
     </div>
   );
