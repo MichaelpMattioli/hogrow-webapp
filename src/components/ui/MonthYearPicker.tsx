@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { Calendar, ChevronLeft, ChevronRight, X } from 'lucide-react';
 
 const MES_PT = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
@@ -30,6 +30,18 @@ export default function MonthYearPicker({ selected, onChange, available }: Month
   };
 
   const availSet = new Set(available);
+  const availableYears = useMemo(
+    () => [...new Set(available.map(ym => Number(ym.slice(0, 4))))].sort((a, b) => a - b),
+    [available]
+  );
+  const prevAvailableYear = useMemo(
+    () => [...availableYears].reverse().find(y => y < year) ?? null,
+    [availableYears, year]
+  );
+  const nextAvailableYear = useMemo(
+    () => availableYears.find(y => y > year) ?? null,
+    [availableYears, year]
+  );
   const nowYM = `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}`;
 
   // Label
@@ -97,14 +109,30 @@ export default function MonthYearPicker({ selected, onChange, available }: Month
         }}>
           {/* Year nav */}
           <div className="flex items-center justify-between mb-3">
-            <button onClick={() => setYear(y => y-1)}
-              style={{ padding:'4px 8px', borderRadius:'var(--rx)', color:'var(--text-m)' }}
+            <button
+              onClick={() => prevAvailableYear != null && setYear(prevAvailableYear)}
+              disabled={prevAvailableYear == null}
+              style={{
+                padding:'4px 8px',
+                borderRadius:'var(--rx)',
+                color:'var(--text-m)',
+                opacity: prevAvailableYear == null ? 0.35 : 1,
+                cursor: prevAvailableYear == null ? 'default' : 'pointer',
+              }}
               className="hover:bg-[var(--surface-h)]">
               <ChevronLeft size={15}/>
             </button>
             <span style={{ fontSize:14, fontWeight:800, color:'var(--text)' }}>{year}</span>
-            <button onClick={() => setYear(y => y+1)}
-              style={{ padding:'4px 8px', borderRadius:'var(--rx)', color:'var(--text-m)' }}
+            <button
+              onClick={() => nextAvailableYear != null && setYear(nextAvailableYear)}
+              disabled={nextAvailableYear == null}
+              style={{
+                padding:'4px 8px',
+                borderRadius:'var(--rx)',
+                color:'var(--text-m)',
+                opacity: nextAvailableYear == null ? 0.35 : 1,
+                cursor: nextAvailableYear == null ? 'default' : 'pointer',
+              }}
               className="hover:bg-[var(--surface-h)]">
               <ChevronRight size={15}/>
             </button>

@@ -1,7 +1,12 @@
 import type { LucideIcon } from 'lucide-react';
-import { TrendingUp, TrendingDown } from 'lucide-react';
+import { TrendingUp, TrendingDown, Target } from 'lucide-react';
 
 export interface PerfData {
+  value: number;
+  formatted: string;
+}
+
+export interface MetaData {
   value: number;
   formatted: string;
 }
@@ -12,9 +17,16 @@ interface PerformanceCardProps {
   currentValue: number;
   currentFormatted: string;
   prevYear: PerfData | null;
-  ytd: PerfData | null;           // YTD absolute value
+  ytd: PerfData | null;
+  meta?: MetaData | null;
+  metaCumulative?: boolean;   // true = Receita (acumula); false = Occ, DM (média alvo)
   highlight?: boolean;
   delay?: number;
+}
+
+function monthElapsedRatio(): number {
+  const now = new Date();
+  return now.getDate() / new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
 }
 
 function pctDelta(current: number, prev: number): number {
@@ -76,9 +88,79 @@ function YtdColumn({ data }: { data: PerfData | null }) {
 
 // ─── Card ─────────────────────────────────────────────────────────────
 
+// ─── Meta strip ──────────────────────────────────────────────────────
+
+function MetaStrip({
+  meta, currentValue, isCumulative,
+}: { meta: MetaData; currentValue: number; isCumulative: boolean }) {
+  const pct     = meta.value > 0 ? (currentValue / meta.value) * 100 : 0;
+  const elapsed = monthElapsedRatio() * 100;
+  const exceeded = currentValue > meta.value;
+
+  // For cumulative (Receita): pace against time elapsed
+  // For averages (Occ, DM): just compare to target directly
+  const color = isCumulative
+    ? (pct >= 100          ? 'var(--green)'
+      : pct >= elapsed * 0.9 ? 'var(--green)'
+      : pct >= elapsed * 0.7 ? 'var(--gold)'
+      : 'var(--red)')
+    : (pct >= 100  ? 'var(--green)'
+      : pct >= 90  ? 'var(--green)'
+      : pct >= 75  ? 'var(--gold)'
+      : 'var(--red)');
+
+  const barPct = Math.min(pct, 100);
+
+  return (
+    <div style={{ marginTop: 2, marginBottom: 14 }}>
+      {/* Progress bar */}
+      <div style={{
+        position: 'relative', height: 5,
+        background: 'var(--border-l)', borderRadius: 99,
+        overflow: 'visible', marginBottom: 7,
+      }}>
+        {/* Elapsed-time marker — only for cumulative metrics */}
+        {isCumulative && (
+          <div style={{
+            position: 'absolute',
+            left: `${Math.min(elapsed, 100)}%`,
+            top: -2, bottom: -2, width: 1.5,
+            background: 'var(--text-m)', opacity: 0.4,
+            borderRadius: 99, zIndex: 2,
+          }} />
+        )}
+        {/* Realizado bar */}
+        <div style={{
+          position: 'absolute', left: 0, top: 0, bottom: 0,
+          width: `${barPct}%`, background: color,
+          borderRadius: 99, transition: 'width .5s ease', zIndex: 1,
+        }} />
+      </div>
+
+      {/* Labels */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <Target size={9} style={{ color, flexShrink: 0 }} />
+          <span style={{ fontSize: 10, fontWeight: 700, color }}>
+            {pct.toFixed(1)}%
+          </span>
+          <span style={{ fontSize: 10, color: 'var(--text-m)', fontWeight: 500 }}>
+            {exceeded ? '· superou' : '· da meta'}
+          </span>
+        </div>
+        <span style={{ fontSize: 10, fontWeight: 600, fontFamily: 'var(--mono)', color: 'var(--text-m)' }}>
+          {meta.formatted}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ─── Card ─────────────────────────────────────────────────────────────
+
 export default function PerformanceCard({
   title, icon: Icon, currentValue, currentFormatted,
-  prevYear, ytd, highlight = false, delay = 0,
+  prevYear, ytd, meta, metaCumulative = false, highlight = false, delay = 0,
 }: PerformanceCardProps) {
   return (
     <div
@@ -104,13 +186,18 @@ export default function PerformanceCard({
       </div>
 
       {/* Primary value */}
-      <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.7px', color: 'var(--text)', fontFamily: 'var(--mono)', marginBottom: 14 }}>
+      <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.7px', color: 'var(--text)', fontFamily: 'var(--mono)', marginBottom: meta ? 10 : 14 }}>
         {currentFormatted}
       </div>
 
+      {/* Meta strip */}
+      {meta && meta.value > 0 && (
+        <MetaStrip meta={meta} currentValue={currentValue} isCumulative={metaCumulative} />
+      )}
+
       {/* Comparisons */}
       <div className="grid grid-cols-2 gap-3" style={{ borderTop: '1px solid var(--border-l)', paddingTop: 12 }}>
-        <YoyColumn prevData={prevYear}  currentValue={currentValue} />
+        <YoyColumn prevData={prevYear} currentValue={currentValue} />
         <YtdColumn data={ytd} />
       </div>
     </div>

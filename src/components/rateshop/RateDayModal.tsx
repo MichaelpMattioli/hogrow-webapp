@@ -1,4 +1,4 @@
-import { X, Users, Star } from 'lucide-react';
+import { X, Users, Star, ExternalLink } from 'lucide-react';
 import type { BookingRate } from '@/data/types';
 
 interface Props {
@@ -14,6 +14,19 @@ function fmtBRL(v: number) {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
 }
 
+/** Constructs a Booking.com search URL from slug + checkin date (1-night stay, 2 adults). */
+function buildBookingUrl(slug: string, checkin: string): string {
+  const d = new Date(`${checkin}T12:00:00`);
+  d.setDate(d.getDate() + 1);
+  const checkout = d.toISOString().slice(0, 10);
+  return (
+    `https://www.booking.com/hotel/br/${slug}.pt-br.html` +
+    `?checkin=${checkin}&checkout=${checkout}` +
+    `&group_adults=2&group_children=0&no_rooms=1` +
+    `&req_adults=2&req_children=0&sb_price_type=total&type=total`
+  );
+}
+
 export default function RateDayModal({ date, rates, anchorTop, onClose }: Props) {
   // Unique hotels: client first, then competitors alphabetically
   const hotels = [...new Set(rates.map(r => r.slug))].sort((a, b) => {
@@ -24,8 +37,10 @@ export default function RateDayModal({ date, rates, anchorTop, onClose }: Props)
     return (rates.find(r => r.slug === a)!.label).localeCompare(rates.find(r => r.slug === b)!.label);
   });
 
-  const getLabelForSlug = (slug: string) => rates.find(r => r.slug === slug)?.label ?? slug;
-  const getTypeForSlug  = (slug: string) => rates.find(r => r.slug === slug)?.type ?? 'concorrente';
+  const getLabelForSlug     = (slug: string) => rates.find(r => r.slug === slug)?.label ?? slug;
+  const getTypeForSlug      = (slug: string) => rates.find(r => r.slug === slug)?.type ?? 'concorrente';
+  const getSearchUrlForSlug = (slug: string) =>
+    rates.find(r => r.slug === slug)?.searchUrl ?? buildBookingUrl(slug, date);
 
   const getRooms = (slug: string, persons: number): BookingRate[] => {
     if (persons === 4) return rates.filter(r => r.slug === slug && r.maxPersons >= 4);
@@ -210,6 +225,25 @@ export default function RateDayModal({ date, rates, anchorTop, onClose }: Props)
                               Seu hotel
                             </div>
                           )}
+                          {getSearchUrlForSlug(slug) && (
+                            <a
+                              href={getSearchUrlForSlug(slug)!}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={e => e.stopPropagation()}
+                              style={{
+                                display: 'inline-flex', alignItems: 'center', gap: 3,
+                                marginTop: 4, fontSize: 10, fontWeight: 500,
+                                color: 'var(--text-m)', textDecoration: 'none',
+                                transition: 'color 0.12s',
+                              }}
+                              onMouseEnter={e => (e.currentTarget.style.color = 'var(--accent)')}
+                              onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-m)')}
+                            >
+                              <ExternalLink size={9} />
+                              Ver no Booking
+                            </a>
+                          )}
                         </div>
                       </div>
                     </td>
@@ -276,6 +310,30 @@ export default function RateDayModal({ date, rates, anchorTop, onClose }: Props)
                                       }}>
                                         {r.mealPlan}
                                       </div>
+                                    )}
+                                    {r.url && (
+                                      <a
+                                        href={r.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        onClick={e => e.stopPropagation()}
+                                        style={{
+                                          display: 'inline-flex', alignItems: 'center', gap: 3,
+                                          marginTop: 6,
+                                          fontSize: 9.5, fontWeight: 600,
+                                          color: 'var(--text-m)',
+                                          textDecoration: 'none',
+                                          borderTop: '1px solid var(--border-l)',
+                                          paddingTop: 5,
+                                          width: '100%',
+                                          transition: 'color 0.12s',
+                                        }}
+                                        onMouseEnter={e => (e.currentTarget.style.color = 'var(--accent)')}
+                                        onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-m)')}
+                                      >
+                                        <ExternalLink size={9} />
+                                        Ver oferta
+                                      </a>
                                     )}
                                   </div>
                                 );

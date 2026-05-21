@@ -1,6 +1,7 @@
-import React, { useState, useMemo, useRef, useCallback } from 'react';
-import { ChevronLeft, ChevronRight, X, RefreshCw, CalendarDays, Table2, Download, Users } from 'lucide-react';
+import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
+import { AlertTriangle, ChevronLeft, ChevronRight, X, RefreshCw, CalendarDays, Table2, Download, Users } from 'lucide-react';
 import type { BookingRate, RateDaySummary } from '@/data/types';
+import { localDateKey } from '@/lib/utils';
 import RateDayModal from './RateDayModal';
 
 // ─── Constants ────────────────────────────────────────────────────────
@@ -16,6 +17,15 @@ const DAY_LABELS3 = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
 
 function fmtBRL(v: number) {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
+}
+
+function dateOnly(value: string | null | undefined) {
+  return value ? value.slice(0, 10) : null;
+}
+
+function fmtDateOnly(value: string) {
+  const [, month, day] = value.split('-');
+  return `${day}/${month}`;
 }
 
 function pctBgBorder(pct: number | null) {
@@ -74,13 +84,17 @@ function buildDaySummaries(
 }
 
 // Monday-based calendar grid
-function buildCalendarDays(yearMonth: string): (string | null)[] {
+function buildCalendarDays(yearMonth: string, minDate: string): (string | null)[] {
   const [y, m] = yearMonth.split('-').map(Number);
-  const firstDay   = new Date(y, m - 1, 1);
   const lastDay    = new Date(y, m, 0).getDate();
+  const minMonth = minDate.slice(0, 7);
+  if (yearMonth < minMonth) return [];
+
+  const firstVisibleDay = yearMonth === minMonth ? Number(minDate.slice(8, 10)) : 1;
+  const firstDay   = new Date(y, m - 1, firstVisibleDay);
   const startOffset = (firstDay.getDay() + 6) % 7;
   const days: (string | null)[] = Array(startOffset).fill(null);
-  for (let d = 1; d <= lastDay; d++) {
+  for (let d = firstVisibleDay; d <= lastDay; d++) {
     days.push(`${yearMonth}-${String(d).padStart(2,'0')}`);
   }
   while (days.length % 7 !== 0) days.push(null);
@@ -95,11 +109,15 @@ function downloadCSV(
   summaries: Map<string, RateDaySummary & { clientHasPax: boolean }>,
   rates: BookingRate[],
   competitors: { slug: string; label: string }[],
+  minDate: string,
 ) {
   const [y, m] = yearMonth.split('-').map(Number);
   const lastDay = new Date(y, m, 0).getDate();
   const dates: string[] = [];
-  for (let d = 1; d <= lastDay; d++) dates.push(`${yearMonth}-${String(d).padStart(2,'0')}`);
+  for (let d = 1; d <= lastDay; d++) {
+    const date = `${yearMonth}-${String(d).padStart(2,'0')}`;
+    if (date >= minDate) dates.push(date);
+  }
 
   // competitor min per date per slug at selectedPersons
   const compLookup = new Map<string, Map<string, number>>();
@@ -203,11 +221,12 @@ interface TableViewProps {
   rates:           BookingRate[];
   competitors:     { slug: string; label: string }[];
   today:           string;
+  minDate:         string;
   onSelectDate:    (d: string) => void;
 }
 
 function TableView({
-  yearMonth, selectedPersons, summaries, rates, competitors, today, onSelectDate,
+  yearMonth, selectedPersons, summaries, rates, competitors, today, minDate, onSelectDate,
 }: TableViewProps) {
   const [, m] = yearMonth.split('-').map(Number);
   const lastDay = new Date(+yearMonth.slice(0,4), m, 0).getDate();
@@ -227,9 +246,12 @@ function TableView({
 
   const dates = useMemo(() => {
     const arr: string[] = [];
-    for (let d = 1; d <= lastDay; d++) arr.push(`${yearMonth}-${String(d).padStart(2,'0')}`);
+    for (let d = 1; d <= lastDay; d++) {
+      const date = `${yearMonth}-${String(d).padStart(2,'0')}`;
+      if (date >= minDate) arr.push(date);
+    }
     return arr;
-  }, [yearMonth, lastDay]);
+  }, [yearMonth, lastDay, minDate]);
 
   const th: React.CSSProperties = {
     padding: '8px 12px', fontSize: 10, fontWeight: 700, letterSpacing: '0.06em',
@@ -364,19 +386,25 @@ interface RateCalendarProps {
 }
 
 export default function RateCalendar({ rates, loading, yearMonth, onMonthChange }: RateCalendarProps) {
+  const today = localDateKey();
+  const visibleRates = useMemo(
+    () => rates.filter(r => r.checkinDate >= today),
+    [rates, today]
+  );
+
   // All unique pax values across all rates for this month
   const allPersonsOptions = useMemo(() => {
     const set = new Set<number>();
-    for (const r of rates) set.add(r.maxPersons);
+    for (const r of visibleRates) set.add(r.maxPersons);
     return [...set].sort((a, b) => a - b);
-  }, [rates]);
+  }, [visibleRates]);
 
   // Pax values the CLIENT offers
   const clientPersonsSet = useMemo(() => {
     const set = new Set<number>();
-    for (const r of rates) if (r.type === 'cliente') set.add(r.maxPersons);
+    for (const r of visibleRates) if (r.type === 'cliente') set.add(r.maxPersons);
     return set;
-  }, [rates]);
+  }, [visibleRates]);
 
   // Default = minimum pax the client offers (falls back to first option overall)
   const defaultPersons = useMemo(() => {
@@ -394,6 +422,7 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange 
 
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [view, setView]                 = useState<ViewMode>('calendar');
+  const [refreshRequested, setRefreshRequested] = useState(false);
 
   const containerRef    = useRef<HTMLDivElement>(null);
   const [modalAnchorTop, setModalAnchorTop] = useState(0);
@@ -408,19 +437,25 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange 
     setSelectedDate(date);
   }, []);
 
-  const summaries    = useMemo(() => buildDaySummaries(rates, selectedPersons), [rates, selectedPersons]);
-  const calendarDays = useMemo(() => buildCalendarDays(yearMonth), [yearMonth]);
+  const summaries    = useMemo(() => buildDaySummaries(visibleRates, selectedPersons), [visibleRates, selectedPersons]);
+  const calendarDays = useMemo(() => buildCalendarDays(yearMonth, today), [yearMonth, today]);
 
   const competitors = useMemo(() => {
     const seen = new Map<string, string>();
-    for (const r of rates) if (r.type === 'concorrente' && !seen.has(r.slug)) seen.set(r.slug, r.label);
+    for (const r of visibleRates) if (r.type === 'concorrente' && !seen.has(r.slug)) seen.set(r.slug, r.label);
     return [...seen.entries()].map(([slug, label]) => ({ slug, label }));
-  }, [rates]);
+  }, [visibleRates]);
 
   const lastScrapedAt = useMemo(() => {
-    if (rates.length === 0) return null;
-    return rates.reduce((max, r) => r.scrapedAt > max ? r.scrapedAt : max, rates[0].scrapedAt);
-  }, [rates]);
+    if (visibleRates.length === 0) return null;
+    return visibleRates.reduce((max, r) => r.scrapedAt > max ? r.scrapedAt : max, visibleRates[0].scrapedAt);
+  }, [visibleRates]);
+  const lastScrapedDate = dateOnly(lastScrapedAt);
+  const shopperNeedsUpdate = Boolean(lastScrapedDate && lastScrapedDate < today);
+
+  useEffect(() => {
+    setRefreshRequested(false);
+  }, [lastScrapedDate, today]);
 
   const fmtScraped = (iso: string) => {
     const d = new Date(iso);
@@ -428,13 +463,16 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange 
   };
 
   const [y, m] = yearMonth.split('-').map(Number);
-  const today  = new Date().toISOString().slice(0,10);
 
   const prevMonth = () => { const pm=m===1?12:m-1; const py=m===1?y-1:y; onMonthChange(`${py}-${String(pm).padStart(2,'0')}`); };
   const nextMonth = () => { const nm=m===12?1:m+1;  const ny=m===12?y+1:y; onMonthChange(`${ny}-${String(nm).padStart(2,'0')}`); };
 
-  const selectedDayRates = selectedDate ? rates.filter(r => r.checkinDate === selectedDate) : [];
-  const hasAnyData = rates.length > 0;
+  const requestShopperUpdate = () => {
+    setRefreshRequested(true);
+  };
+
+  const selectedDayRates = selectedDate ? visibleRates.filter(r => r.checkinDate === selectedDate) : [];
+  const hasAnyData = visibleRates.length > 0;
 
   const toggleBtn = (active: boolean): React.CSSProperties => ({
     display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -462,15 +500,42 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange 
 
           <div className="flex items-center gap-2">
             {lastScrapedAt && (
-              <div className="flex items-center gap-1.5" style={{
-                padding: '5px 11px', borderRadius: 'var(--rx)',
-                background: 'var(--bg)', border: '1px solid var(--border-l)',
-              }}>
-                <RefreshCw size={10} style={{ color: 'var(--green)', flexShrink: 0 }} />
-                <span style={{ fontSize: 10.5, color: 'var(--text-m)', fontWeight: 500 }}>
-                  Atualizado{' '}
-                  <strong style={{ color: 'var(--text)', fontWeight: 700 }}>{fmtScraped(lastScrapedAt)}</strong>
-                </span>
+              <div style={{ display:'flex', alignItems:'center', gap:6, flexWrap:'wrap', justifyContent:'flex-end' }}>
+                <div className="flex items-center gap-1.5" style={{
+                  padding: '5px 9px', borderRadius: 'var(--rx)',
+                  background: shopperNeedsUpdate ? 'var(--amber-l)' : 'var(--bg)',
+                  border: `1px solid ${shopperNeedsUpdate ? '#FDE68A' : 'var(--border-l)'}`,
+                }}>
+                  {shopperNeedsUpdate ? (
+                    <AlertTriangle size={10} style={{ color: 'var(--amber)', flexShrink: 0 }} />
+                  ) : (
+                    <RefreshCw size={10} style={{ color: 'var(--green)', flexShrink: 0 }} />
+                  )}
+                  <span style={{ fontSize: 10.5, color: 'var(--text-m)', fontWeight: 500 }}>
+                    {shopperNeedsUpdate ? 'Desatualizado' : 'Atualizado'}{' '}
+                    <strong style={{ color: 'var(--text)', fontWeight: 700 }}>{fmtScraped(lastScrapedAt)}</strong>
+                  </span>
+                </div>
+
+                {shopperNeedsUpdate && (
+                  <button
+                    type="button"
+                    onClick={requestShopperUpdate}
+                    title="Solicitação de atualização em desenvolvimento"
+                  style={{
+                    display:'flex', alignItems:'center', gap:5,
+                    padding:'5px 9px', borderRadius:'var(--rx)',
+                    border:'1px solid var(--border)',
+                    background: refreshRequested ? 'var(--green-l)' : 'var(--surface)',
+                    color: refreshRequested ? 'var(--green)' : 'var(--accent)',
+                    fontSize:10.5, fontWeight:750,
+                    cursor:'pointer',
+                  }}
+                >
+                    <RefreshCw size={10} />
+                    {refreshRequested ? 'Em desenvolvimento' : 'Atualizar (em dev)'}
+                  </button>
+                )}
               </div>
             )}
 
@@ -503,7 +568,7 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange 
             {/* Download */}
             <button
               title="Baixar CSV"
-              onClick={() => downloadCSV(yearMonth, selectedPersons, summaries, rates, competitors)}
+              onClick={() => downloadCSV(yearMonth, selectedPersons, summaries, visibleRates, competitors, today)}
               disabled={!hasAnyData}
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -520,6 +585,25 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange 
         </div>
 
         {/* ── Header row 2: Pax filter ── */}
+        {shopperNeedsUpdate && lastScrapedDate && (
+          <div style={{
+            display:'flex', alignItems:'center', gap:8,
+            marginBottom:14,
+            padding:'8px 10px',
+            borderRadius:'var(--rx)',
+            background:'var(--amber-l)',
+            border:'1px solid #FDE68A',
+            color:'var(--text)',
+            fontSize:11.5,
+            fontWeight:600,
+          }}>
+            <AlertTriangle size={14} style={{ color:'var(--amber)', flexShrink:0 }} />
+            <span>
+              Shopper desatualizado: última coleta em {fmtDateOnly(lastScrapedDate)}. Atualize para refletir a data de hoje ({fmtDateOnly(today)}).
+            </span>
+          </div>
+        )}
+
         {hasAnyData && allPersonsOptions.length > 0 && (
           <div style={{
             display: 'flex', alignItems: 'center',
@@ -564,9 +648,10 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange 
             yearMonth={yearMonth}
             selectedPersons={selectedPersons}
             summaries={summaries}
-            rates={rates}
+            rates={visibleRates}
             competitors={competitors}
             today={today}
+            minDate={today}
             onSelectDate={openModal}
           />
         ) : (
@@ -608,7 +693,7 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange 
 
                 // Client has no room at this pax → grey cell regardless of competitors
                 if (noClient) {
-                  const compFiltered = rates.filter(r => r.type === 'concorrente' && r.checkinDate === date && r.maxPersons === selectedPersons);
+                  const compFiltered = visibleRates.filter(r => r.type === 'concorrente' && r.checkinDate === date && r.maxPersons === selectedPersons);
                   const compMin = compFiltered.length > 0 ? Math.min(...compFiltered.map(r => r.priceBrl)) : null;
                   return (
                     <div key={date} style={{

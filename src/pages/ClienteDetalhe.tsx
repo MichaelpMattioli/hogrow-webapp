@@ -1,13 +1,12 @@
-import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect, type CSSProperties } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { BedDouble, DollarSign, TrendingUp, BarChart3, Loader2, ArrowLeft, MoreVertical, Pencil, Percent, Users } from 'lucide-react';
-import MonthYearPicker from '@/components/ui/MonthYearPicker';
-import { useHotelDetail, updateHotel, usePickup, useBookingRates } from '@/hooks/useSupabase';
+import { BedDouble, DollarSign, TrendingUp, BarChart3, Loader2, ArrowLeft, ChevronLeft, ChevronRight, MoreVertical, Pencil, Percent, Users } from 'lucide-react';
+import { useHotelDetail, updateHotel, usePickup, useBookingRates, useBookingRatesForMonths, useHotelMetas } from '@/hooks/useSupabase';
 import { getInsights } from '@/data/transforms';
-import { STATUS_CONFIG } from '@/lib/utils';
+import { localDateKey, localMonthKey, STATUS_CONFIG } from '@/lib/utils';
 import type { HotelRow } from '@/data/types';
 import PerformanceCard from '@/components/cards/PerformanceCard';
-import type { PerfData } from '@/components/cards/PerformanceCard';
+import type { PerfData, MetaData } from '@/components/cards/PerformanceCard';
 
 import PickupSection from '@/components/tables/PickupSection';
 import HotelEditForm from '@/components/forms/HotelEditForm';
@@ -15,16 +14,239 @@ import RateCalendar from '@/components/rateshop/RateCalendar';
 
 type Tab = 'dashboard' | 'editar';
 
+const MES_PT = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+const MES_PT_FULL = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+function fmtMonthTitle(ym: string) {
+  const [year, month] = ym.split('-');
+  return `${MES_PT_FULL[Number(month) - 1] ?? month} ${year}`;
+}
+
+function fmtMonthRange(ym: string) {
+  const [year, month] = ym.split('-');
+  const lastDay = String(new Date(Number(year), Number(month), 0).getDate()).padStart(2, '0');
+  return `01/${month}/${year} a ${lastDay}/${month}/${year}`;
+}
+
+function HeaderMonthReference({
+  selectedMonth,
+  availableMonths,
+  onSelect,
+}: {
+  selectedMonth: string;
+  availableMonths: string[];
+  onSelect: (month: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [year, setYear] = useState(() => Number(selectedMonth.slice(0, 4)));
+  const ref = useRef<HTMLDivElement>(null);
+  const months = useMemo(() => [...new Set(availableMonths)].sort(), [availableMonths]);
+  const availSet = useMemo(() => new Set(months), [months]);
+  const availableYears = useMemo(
+    () => [...new Set(months.map(ym => Number(ym.slice(0, 4))))].sort((a, b) => a - b),
+    [months]
+  );
+  const activeIndex = months.indexOf(selectedMonth);
+  const prevMonth = activeIndex > 0 ? months[activeIndex - 1] : null;
+  const nextMonth = activeIndex >= 0 && activeIndex < months.length - 1 ? months[activeIndex + 1] : null;
+  const prevYear = useMemo(
+    () => [...availableYears].reverse().find(y => y < year) ?? null,
+    [availableYears, year]
+  );
+  const nextYear = useMemo(
+    () => availableYears.find(y => y > year) ?? null,
+    [availableYears, year]
+  );
+
+  useEffect(() => {
+    setYear(Number(selectedMonth.slice(0, 4)));
+  }, [selectedMonth]);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const navButton = (enabled: boolean): CSSProperties => ({
+    width: 30,
+    height: 30,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 'var(--rx)',
+    border: '1px solid var(--border)',
+    background: 'var(--surface)',
+    color: 'var(--text-m)',
+    opacity: enabled ? 1 : 0.35,
+    cursor: enabled ? 'pointer' : 'default',
+    flexShrink: 0,
+  });
+
+  const selectMonth = (month: string) => {
+    onSelect(month);
+    setOpen(false);
+  };
+
+  return (
+    <div ref={ref} style={{
+      position: 'relative',
+      display: 'grid',
+      gridTemplateColumns: '30px minmax(150px, 220px) 30px',
+      alignItems: 'center',
+      gap: 9,
+      padding: '2px 0',
+    }}>
+      <button
+        onClick={() => prevMonth && onSelect(prevMonth)}
+        disabled={!prevMonth}
+        title="Referência anterior"
+        aria-label="Referência anterior"
+        style={navButton(Boolean(prevMonth))}
+      >
+        <ChevronLeft size={16} />
+      </button>
+
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        title="Selecionar mês de referência"
+        aria-label="Selecionar mês de referência"
+        style={{
+          minWidth: 0,
+          textAlign: 'left',
+          border: '1px solid transparent',
+          borderRadius: 'var(--rx)',
+          padding: '5px 7px',
+          background: open ? 'var(--accent-l)' : 'transparent',
+          cursor: 'pointer',
+        }}
+      >
+        <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: 0.6, color: 'var(--accent)', marginBottom: 3 }}>
+          MÊS DE REFERÊNCIA
+        </div>
+        <div style={{
+          fontSize: 20,
+          lineHeight: 1.05,
+          fontWeight: 900,
+          color: 'var(--text)',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }}>
+          {fmtMonthTitle(selectedMonth)}
+        </div>
+        <div style={{ marginTop: 3, fontSize: 10.5, fontWeight: 650, color: 'var(--text-m)', whiteSpace: 'nowrap' }}>
+          {fmtMonthRange(selectedMonth)}
+        </div>
+      </button>
+
+      <button
+        onClick={() => nextMonth && onSelect(nextMonth)}
+        disabled={!nextMonth}
+        title="Próxima referência"
+        aria-label="Próxima referência"
+        style={navButton(Boolean(nextMonth))}
+      >
+        <ChevronRight size={16} />
+      </button>
+
+      {open && (
+        <div style={{
+          position: 'absolute',
+          top: 'calc(100% + 8px)',
+          left: 39,
+          zIndex: 80,
+          width: 260,
+          background: 'var(--surface)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--r)',
+          boxShadow: 'var(--sh-m)',
+          padding: 14,
+        }}>
+          <div className="flex items-center justify-between mb-3">
+            <button
+              onClick={() => prevYear != null && setYear(prevYear)}
+              disabled={prevYear == null}
+              style={{
+                padding: '4px 8px',
+                borderRadius: 'var(--rx)',
+                color: 'var(--text-m)',
+                opacity: prevYear == null ? 0.35 : 1,
+                cursor: prevYear == null ? 'default' : 'pointer',
+              }}
+              className="hover:bg-[var(--surface-h)]"
+            >
+              <ChevronLeft size={15} />
+            </button>
+            <span style={{ fontSize: 14, fontWeight: 850, color: 'var(--text)' }}>{year}</span>
+            <button
+              onClick={() => nextYear != null && setYear(nextYear)}
+              disabled={nextYear == null}
+              style={{
+                padding: '4px 8px',
+                borderRadius: 'var(--rx)',
+                color: 'var(--text-m)',
+                opacity: nextYear == null ? 0.35 : 1,
+                cursor: nextYear == null ? 'default' : 'pointer',
+              }}
+              className="hover:bg-[var(--surface-h)]"
+            >
+              <ChevronRight size={15} />
+            </button>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 5 }}>
+            {MES_PT.map((label, i) => {
+              const ym = `${year}-${String(i + 1).padStart(2, '0')}`;
+              const hasData = availSet.has(ym);
+              const selected = selectedMonth === ym;
+              return (
+                <button
+                  key={ym}
+                  disabled={!hasData}
+                  onClick={() => selectMonth(ym)}
+                  style={{
+                    padding: '7px 4px',
+                    borderRadius: 'var(--rx)',
+                    fontSize: 11.5,
+                    fontWeight: selected ? 850 : 650,
+                    border: `1.5px solid ${selected ? 'var(--accent)' : 'transparent'}`,
+                    background: selected ? 'var(--accent)' : 'var(--bg)',
+                    color: selected ? '#fff' : hasData ? 'var(--text)' : 'var(--text-m)',
+                    opacity: hasData ? 1 : 0.35,
+                    cursor: hasData ? 'pointer' : 'default',
+                    transition: 'all .1s',
+                  }}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 export default function ClienteDetalhe() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { hotel, kpis, summary, loading, error, reload } = useHotelDetail(Number(id));
   const { rows: pickupRows } = usePickup(Number(id));
-  const mesAtual = new Date().toISOString().slice(0, 7);
+  const mesAtual = localMonthKey();
   const [selectedMeses, setSelectedMeses] = useState<string[]>([mesAtual]);
   const [rateMonth, setRateMonth] = useState(mesAtual);
   const { rates, loading: ratesLoading } = useBookingRates(Number(id), rateMonth);
+  const pickupShopperMonths = useMemo(
+    () => selectedMeses.length > 0 ? selectedMeses : [mesAtual],
+    [selectedMeses, mesAtual]
+  );
+  const { rates: pickupShopperRates } = useBookingRatesForMonths(Number(id), pickupShopperMonths);
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -44,6 +266,12 @@ export default function ClienteDetalhe() {
     return result;
   }, [id, reload]);
 
+  const handleMesesChange = useCallback((months: string[]) => {
+    const month = months[months.length - 1] ?? mesAtual;
+    setSelectedMeses([month]);
+    setRateMonth(month);
+  }, [mesAtual]);
+
   // Deduplicate: keep latest extraction per reference date
   const latestKpis = useMemo(() => {
     const byRef = new Map<string, typeof kpis[0]>();
@@ -61,6 +289,12 @@ export default function ClienteDetalhe() {
     [...new Set(latestKpis.map(k => k.date.slice(0, 7)))].sort(),
     [latestKpis]
   );
+  const selectedMes = selectedMeses[0] ?? mesAtual;
+
+  useEffect(() => {
+    if (meses.length === 0 || meses.includes(selectedMes)) return;
+    handleMesesChange([meses[meses.length - 1]]);
+  }, [handleMesesChange, meses, selectedMes]);
 
   // Filtered latest KPIs
   const filteredKpis = useMemo(() => {
@@ -68,25 +302,29 @@ export default function ClienteDetalhe() {
     return latestKpis.filter(k => selectedMeses.includes(k.date.slice(0, 7)));
   }, [latestKpis, selectedMeses]);
 
-  const hotelUhs = summary?.uhs ?? (filteredKpis[0]?.totalUhs ?? 1);
+  const hotelUhs = summary?.uhs && summary.uhs > 0
+    ? summary.uhs
+    : (filteredKpis.find(k => k.totalUhs > 0)?.totalUhs ?? 0);
 
   // Helper: aggregate KPIs for any set of rows + month keys
-  function computeAgg(kpis: typeof filteredKpis, monthSet: string[]) {
+  function computeAgg(kpis: typeof filteredKpis) {
     if (kpis.length === 0) return null;
     const uhsTT = kpis.reduce((s, k) => s + k.ocupados, 0);
     const receita = Math.round(kpis.reduce((s, k) => s + k.recTotal, 0));
-    const dmCcTT = uhsTT > 0 ? Math.round(receita / uhsTT) : 0;
-    const effectiveMonths = monthSet.length > 0
-      ? monthSet
-      : [...new Set(kpis.map(k => k.date.slice(0, 7)))];
-    const totalPossible = effectiveMonths.reduce((sum, m) => {
-      const [y, mo] = m.split('-').map(Number);
-      return sum + new Date(y, mo, 0).getDate() * hotelUhs;
+    const recDiarias = kpis.reduce((s, k) => s + k.recDiarias, 0);
+    const dmCcTT = uhsTT > 0 ? Math.round(recDiarias / uhsTT) : 0;
+    const totalPossible = kpis.reduce((sum, k) => {
+      const dailyUhs = k.totalUhs > 0 ? k.totalUhs : hotelUhs;
+      return sum + Math.max(dailyUhs, 0);
     }, 0);
+    const avgOcc = kpis.reduce((s, k) => s + k.occPct, 0) / kpis.length;
     const occTT = totalPossible > 0
       ? parseFloat(((uhsTT / totalPossible) * 100).toFixed(1))
-      : 0;
-    const revpTT = Math.round(dmCcTT * (occTT / 100));
+      : parseFloat(avgOcc.toFixed(1));
+    const avgRevpar = kpis.reduce((s, k) => s + k.revpar, 0) / kpis.length;
+    const revpTT = totalPossible > 0
+      ? Math.round(recDiarias / totalPossible)
+      : Math.round(avgRevpar);
     const cortesia = kpis.reduce((s, k) => s + k.cortesia, 0);
     const hospedes = kpis.reduce((s, k) => s + (k.pax ?? 0) + (k.chd ?? 0), 0);
     return { uhsTT, receita, dmCcTT, occTT, revpTT, cortesia, hospedes };
@@ -94,7 +332,7 @@ export default function ClienteDetalhe() {
 
   // Current period
   const aggKpis = useMemo(
-    () => computeAgg(filteredKpis, selectedMeses),
+    () => computeAgg(filteredKpis),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [filteredKpis, selectedMeses, hotelUhs]
   );
@@ -102,7 +340,7 @@ export default function ClienteDetalhe() {
   // YTD: all months in the current calendar year up to today
   const currentYear = new Date().getFullYear().toString();
   const ytdMeses = useMemo(() => {
-    const todayYM = new Date().toISOString().slice(0, 7);
+    const todayYM = localMonthKey();
     return [...new Set(latestKpis.map(k => k.date.slice(0, 7)))]
       .filter(m => m.startsWith(currentYear) && m <= todayYM);
   }, [latestKpis, currentYear]);
@@ -112,7 +350,7 @@ export default function ClienteDetalhe() {
     [latestKpis, ytdMeses]
   );
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const ytdAgg = useMemo(() => computeAgg(ytdKpis, ytdMeses), [ytdKpis, ytdMeses, hotelUhs]);
+  const ytdAgg = useMemo(() => computeAgg(ytdKpis), [ytdKpis, hotelUhs]);
 
   // Previous year keys (same months, -1 year)
   const prevAnoMeses = useMemo(() => {
@@ -129,9 +367,17 @@ export default function ClienteDetalhe() {
   );
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const prevAnoAgg = useMemo(() => computeAgg(prevAnoKpis, prevAnoMeses), [prevAnoKpis, prevAnoMeses, hotelUhs]);
+  const prevAnoAgg = useMemo(() => computeAgg(prevAnoKpis), [prevAnoKpis, hotelUhs]);
 
-  // Formatting helpers
+  // Meta for the primary selected month (single-month) or current month
+  const metaMes = selectedMeses.length === 1 ? selectedMeses[0] : mesAtual;
+  const { metas: hotelMetasList } = useHotelMetas(metaMes);
+  const hotelMeta = useMemo(
+    () => hotelMetasList.find(m => m.hotelId === Number(id)) ?? null,
+    [hotelMetasList, id]
+  );
+
+  // Build MetaData helpers
   const fmtR = (v: number) => 'R$ ' + v.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
   const fmtRec = (v: number) =>
     v >= 1_000_000
@@ -140,7 +386,9 @@ export default function ClienteDetalhe() {
         ? `R$ ${Math.round(v / 1_000).toLocaleString('pt-BR')}k`
         : fmtR(v);
   const fmtOcc = (v: number) => `${v.toFixed(1)}%`;
-  const pd = (v: number, fmt: (n: number) => string): PerfData => ({ value: v, formatted: fmt(v) });
+  const pd  = (v: number, fmt: (n: number) => string): PerfData => ({ value: v, formatted: fmt(v) });
+  const pmd = (v: number | null | undefined, fmt: (n: number) => string): MetaData | null =>
+    v != null && v > 0 ? { value: v, formatted: fmt(v) } : null;
 
   const insights = getInsights(filteredKpis);
 
@@ -165,7 +413,7 @@ export default function ClienteDetalhe() {
   }
 
   const cfg = STATUS_CONFIG[summary.status];
-  const hojeStr = new Date().toISOString().slice(0, 10);
+  const hojeStr = localDateKey();
   const hoje = latestKpis.find(k => k.date === hojeStr) ?? (latestKpis.length > 0 ? latestKpis[latestKpis.length - 1] : null);
 
   return (
@@ -183,43 +431,60 @@ export default function ClienteDetalhe() {
       {/* Header */}
       <div
         className="flex justify-between items-center rounded-[var(--rs)]"
-        style={{ borderLeft: `4px solid ${cfg.color}`, padding: '14px 18px', background: 'var(--surface)', marginBottom: 40 }}
+        style={{
+          borderLeft: `4px solid ${cfg.color}`,
+          padding: '14px 18px',
+          background: 'var(--surface)',
+          marginBottom: 40,
+          gap: 18,
+          flexWrap: 'wrap',
+        }}
       >
-        <div>
+        <div style={{ minWidth: 220 }}>
           <h2 className="text-xl font-bold" style={{ letterSpacing: '-0.4px' }}>{summary.name}</h2>
           <p className="text-[13px] mt-0.5" style={{ color: 'var(--text-m)' }}>
             {summary.city}, {summary.state}
             {hoje ? ` · ${hoje.ocupados}/${hoje.totalUhs} UHs` : ` · ${summary.uhs} UHs`}
           </p>
         </div>
-        {/* 3-dot menu */}
-        <div ref={menuRef} style={{ position: 'relative' }}>
-          <button
-            className="flex items-center justify-center rounded-[var(--rx)] transition-colors duration-150 hover:bg-[var(--surface-h)]"
-            style={{ width: 32, height: 32, background: menuOpen ? 'var(--surface-h)' : 'transparent' }}
-            onClick={() => setMenuOpen(o => !o)}
-          >
-            <MoreVertical size={16} style={{ color: 'var(--text-m)' }} />
-          </button>
-          {menuOpen && (
-            <div
-              className="rounded-[var(--r)]"
-              style={{
-                position: 'absolute', top: '100%', right: 0, marginTop: 4, zIndex: 50,
-                background: 'var(--surface)', border: '1px solid var(--border)',
-                boxShadow: 'var(--sh-m)', minWidth: 160, padding: '4px 0',
-              }}
-            >
-              <button
-                className="flex items-center gap-2 w-full text-left text-[12px] font-medium transition-colors duration-100 hover:bg-[var(--surface-h)]"
-                style={{ padding: '7px 14px', color: 'var(--text)' }}
-                onClick={() => { setActiveTab('editar'); setMenuOpen(false); }}
-              >
-                <Pencil size={13} style={{ color: 'var(--text-m)' }} />
-                Editar Hotel
-              </button>
-            </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          {meses.length > 0 && (
+            <HeaderMonthReference
+              selectedMonth={selectedMes}
+              availableMonths={meses}
+              onSelect={month => handleMesesChange([month])}
+            />
           )}
+
+          {/* 3-dot menu */}
+          <div ref={menuRef} style={{ position: 'relative' }}>
+            <button
+              className="flex items-center justify-center rounded-[var(--rx)] transition-colors duration-150 hover:bg-[var(--surface-h)]"
+              style={{ width: 32, height: 32, background: menuOpen ? 'var(--surface-h)' : 'transparent' }}
+              onClick={() => setMenuOpen(o => !o)}
+            >
+              <MoreVertical size={16} style={{ color: 'var(--text-m)' }} />
+            </button>
+            {menuOpen && (
+              <div
+                className="rounded-[var(--r)]"
+                style={{
+                  position: 'absolute', top: '100%', right: 0, marginTop: 4, zIndex: 50,
+                  background: 'var(--surface)', border: '1px solid var(--border)',
+                  boxShadow: 'var(--sh-m)', minWidth: 160, padding: '4px 0',
+                }}
+              >
+                <button
+                  className="flex items-center gap-2 w-full text-left text-[12px] font-medium transition-colors duration-100 hover:bg-[var(--surface-h)]"
+                  style={{ padding: '7px 14px', color: 'var(--text)' }}
+                  onClick={() => { setActiveTab('editar'); setMenuOpen(false); }}
+                >
+                  <Pencil size={13} style={{ color: 'var(--text-m)' }} />
+                  Editar Hotel
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -237,15 +502,6 @@ export default function ClienteDetalhe() {
         </>
       ) : (
       <>
-      {/* Period filter — month/year calendar picker */}
-      <div style={{ marginBottom: 40 }}>
-        <MonthYearPicker
-          selected={selectedMeses}
-          onChange={setSelectedMeses}
-          available={meses}
-        />
-      </div>
-
       {/* Performance Indicators */}
       {aggKpis && (
         <>
@@ -256,18 +512,22 @@ export default function ClienteDetalhe() {
               currentValue={aggKpis.receita} currentFormatted={fmtRec(aggKpis.receita)}
               prevYear={prevAnoAgg ? pd(prevAnoAgg.receita, fmtRec) : null}
               ytd={ytdAgg ? pd(ytdAgg.receita, fmtRec) : null}
+              meta={pmd(hotelMeta?.receitaMeta, fmtRec)}
+              metaCumulative
             />
             <PerformanceCard
               title="Ocupação" icon={Percent} highlight delay={60}
               currentValue={aggKpis.occTT} currentFormatted={fmtOcc(aggKpis.occTT)}
               prevYear={prevAnoAgg ? pd(prevAnoAgg.occTT, fmtOcc) : null}
               ytd={ytdAgg ? pd(ytdAgg.occTT, fmtOcc) : null}
+              meta={pmd(hotelMeta?.occMeta, fmtOcc)}
             />
             <PerformanceCard
               title="Diária Média" icon={DollarSign} highlight delay={120}
               currentValue={aggKpis.dmCcTT} currentFormatted={fmtR(aggKpis.dmCcTT)}
               prevYear={prevAnoAgg ? pd(prevAnoAgg.dmCcTT, fmtR) : null}
               ytd={ytdAgg ? pd(ytdAgg.dmCcTT, fmtR) : null}
+              meta={pmd(hotelMeta?.dmMeta, fmtR)}
             />
           </div>
 
@@ -303,6 +563,9 @@ export default function ClienteDetalhe() {
           hotelId={Number(id)}
           pickupRows={pickupRows}
           selectedMeses={selectedMeses}
+          availableMeses={meses}
+          onReferenceChange={handleMesesChange}
+          shopperRates={pickupShopperRates}
         />
       </div>
 

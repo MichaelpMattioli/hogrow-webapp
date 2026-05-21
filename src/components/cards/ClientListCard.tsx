@@ -395,9 +395,11 @@ export default function ClientListCard({ hotel, meta, onClick, delay = 0 }: Clie
     ? hotel.receitaMesAtual / hotel.ocupadosMesAtual
     : null;
 
-  const revpar = ok(dm) && ok(hotel.occMesAtual)
-    ? dm * hotel.occMesAtual / 100
-    : null;
+  const revpar = ok(hotel.avgRevpar)
+    ? hotel.avgRevpar
+    : ok(dm) && ok(hotel.occMesAtual)
+      ? dm * hotel.occMesAtual / 100
+      : null;
 
   // ── YoY derived values ───────────────────────────────────────────────
   const dmAnoAnterior = ok(hotel.ocupadosAnoAnterior) && hotel.ocupadosAnoAnterior > 0
