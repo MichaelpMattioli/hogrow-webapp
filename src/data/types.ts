@@ -6,6 +6,7 @@ export type HotelStatus = 'excellent' | 'healthy' | 'warning' | 'critical';
 export interface HotelRow {
   id: number;
   property_id: number | null;
+  tipo: 'cliente' | 'concorrente';
   razao_social: string;
   nome_fantasia: string;
   cidade: string | null;
@@ -203,6 +204,8 @@ export interface BookingRate {
   cancellation: string | null;
   priceBrl: number;
   scrapedAt: string;
+  url: string | null;
+  searchUrl: string | null;
 }
 
 // Computed per-day summary for the calendar cell

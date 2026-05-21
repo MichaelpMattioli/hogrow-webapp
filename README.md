@@ -21,6 +21,11 @@ npm run dev
 
 Acesse: http://localhost:5173
 
+## Fonte De Dados Atual
+
+- Detalhe do cliente usa `public.vw_hotel_receita_diaria_atual`, que mantem somente a ultima `data_extracao` por `hotel_id + data_referencia`.
+- Boletim de ocupacao nao e mais populado manualmente no webapp; a posicao atual vem de `public.vw_boletim_ocupacao_atual`, derivada de `hotel_receita_diaria`.
+
 ## Build de Produção
 
 ```bash

@@ -1,7 +1,86 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
+import { localDateKey } from '@/lib/utils';
 import { buildHotelSummary, parseKpiRow, deriveStatus } from '@/data/transforms';
 import type { HotelRow, ReceitaDiariaRow, KpiDiario, HotelSummary, PickupRow, BookingRate, HotelMeta } from '@/data/types';
+
+async function fetchClientHotelIds(): Promise<number[]> {
+  const { data, error } = await supabase
+    .from('hotel')
+    .select('id')
+    .eq('tipo', 'cliente');
+
+  if (error) throw error;
+  return ((data ?? []) as Array<{ id: number }>).map(r => r.id);
+}
+
+function isPickupExtractionAllowed(dataExtracao: string | null | undefined, dataReferencia: string | null | undefined): boolean {
+  if (!dataExtracao || !dataReferencia) return false;
+  return dataExtracao.slice(0, 7) <= dataReferencia.slice(0, 7);
+}
+
+function parseBookingRate(r: Record<string, unknown>): BookingRate {
+  return {
+    id: r.id as number,
+    hotelId: r.hotel_id as number,
+    checkinDate: r.checkin_date as string,
+    slug: r.slug as string,
+    label: r.label as string,
+    type: r.type as 'cliente' | 'concorrente',
+    roomName: r.room_name as string,
+    roomId: r.room_id as string | null,
+    maxPersons: r.max_persons as number,
+    mealPlan: r.meal_plan as string | null,
+    cancellation: r.cancellation as string | null,
+    priceBrl: r.price_brl as number,
+    scrapedAt: r.scraped_at as string,
+    url: (r.url as string | null) ?? null,
+    searchUrl: (r.search_url as string | null) ?? null,
+  };
+}
+
+function keepLatestBookingRatesByHotelDate(rates: BookingRate[], minDate: string): BookingRate[] {
+  const latestBySlugDate = new Map<string, string>();
+  for (const r of rates) {
+    const key = `${r.slug}|${r.checkinDate}`;
+    const cur = latestBySlugDate.get(key);
+    if (!cur || r.scrapedAt > cur) latestBySlugDate.set(key, r.scrapedAt);
+  }
+
+  return rates.filter(r => {
+    const key = `${r.slug}|${r.checkinDate}`;
+    return r.checkinDate >= minDate && r.scrapedAt === latestBySlugDate.get(key);
+  });
+}
+
+async function fetchBookingRatesRange(hotelId: number, from: string, to: string, keepLatest = true): Promise<BookingRate[]> {
+  if (!hotelId || from > to) return [];
+
+  const pageSize = 1000;
+  const rawRows: Record<string, unknown>[] = [];
+  let offset = 0;
+
+  while (true) {
+    const { data, error } = await supabase
+      .from('vw_booking_rates')
+      .select('*')
+      .eq('hotel_id', hotelId)
+      .eq('booking_info_ativo', true)
+      .gte('checkin_date', from)
+      .lte('checkin_date', to)
+      .order('checkin_date', { ascending: true })
+      .range(offset, offset + pageSize - 1);
+
+    if (error) throw error;
+    const page = (data ?? []) as Record<string, unknown>[];
+    rawRows.push(...page);
+    if (page.length < pageSize) break;
+    offset += pageSize;
+  }
+
+  const rates = rawRows.map(parseBookingRate).filter(r => r.checkinDate >= from);
+  return keepLatest ? keepLatestBookingRatesByHotelDate(rates, from) : rates;
+}
 
 // ─── Fetch all hotels via pre-aggregated view ────────────────────────
 
@@ -14,9 +93,17 @@ export function useHotels() {
     async function load() {
       setLoading(true);
       try {
+        const clientIds = await fetchClientHotelIds();
+
+        if (clientIds.length === 0) {
+          setHotels([]);
+          return;
+        }
+
         const { data, error: err } = await supabase
           .from('vw_hotel_summary')
-          .select('*');
+          .select('*')
+          .in('id', clientIds);
 
         if (err) throw err;
 
@@ -31,9 +118,9 @@ export function useHotels() {
           ativo:       r.ativo         as boolean,
 
           // Aggregated — use view values as best proxies
-          avgOcc:          (r.occ_mes_atual  as number) ?? 0,
-          avgRevpar:       0,
-          avgDm:           null,
+          avgOcc:          num(r.occ_mes_atual),
+          avgRevpar:       num(r.revpar_mes_atual),
+          avgDm:           nullableNum(r.dm_mes_atual),
           totalReceita:    (r.receita_ytd    as number) ?? 0,
           totalRecDiarias: 0,
           totalRecAb:      0,
@@ -45,7 +132,7 @@ export function useHotels() {
           receitaMesAnterior:     (r.receita_mes_anterior     as number) ?? 0,
           recDiariasMesAnterior:  (r.rec_diarias_mes_anterior as number) ?? 0,
           receitaMesQueVem:       0,
-          occMesAtual:            (r.occ_mes_atual            as number) ?? 0,
+          occMesAtual:            num(r.occ_mes_atual),
           occMesAnterior:         (r.occ_mes_anterior         as number) ?? 0,
           occMesQueVem:           0,
           ocupadosMesAtual:       (r.ocupados_mes_atual       as number) ?? 0,
@@ -72,11 +159,11 @@ export function useHotels() {
           latestExtracao:  (r.latest_extracao  as string) ?? '—',
           latestOcupados:  (r.latest_ocupados  as number) ?? 0,
           latestOcc:       (r.latest_occ       as number) ?? 0,
-          latestRevpar:    0,
+          latestRevpar:    num(r.latest_revpar),
           latestDm:         r.latest_dm        as number | null,
           latestRecTotal:  (r.latest_rec_total as number) ?? 0,
 
-          status: deriveStatus((r.occ_mes_atual as number) ?? 0),
+          status: deriveStatus(num(r.occ_mes_atual)),
         }));
 
         setHotels(summaries);
@@ -117,7 +204,7 @@ export function useHotelDetail(id: number) {
         if (hErr) throw hErr;
 
         const { data: kpiRows, error: kErr } = await supabase
-          .from('hotel_receita_diaria')
+          .from('vw_hotel_receita_diaria_atual')
           .select('*')
           .eq('hotel_id', id)
           .order('data_referencia', { ascending: true });
@@ -165,40 +252,63 @@ export function useBookingRates(hotelId: number, yearMonth: string) {
   useEffect(() => {
     async function load() {
       setLoading(true);
-      const from = `${yearMonth}-01`;
+      const monthStart = `${yearMonth}-01`;
+      const today = localDateKey();
+      const from = monthStart < today ? today : monthStart;
       const [y, mo] = yearMonth.split('-').map(Number);
       const lastDay = new Date(y, mo, 0).getDate();
       const to = `${yearMonth}-${String(lastDay).padStart(2, '0')}`;
 
-      const { data, error } = await supabase
-        .from('booking_rates')
-        .select('*')
-        .eq('hotel_id', hotelId)
-        .gte('checkin_date', from)
-        .lte('checkin_date', to)
-        .order('checkin_date', { ascending: true });
-
-      if (!error && data) {
-        setRates((data as Record<string, unknown>[]).map(r => ({
-          id: r.id as number,
-          hotelId: r.hotel_id as number,
-          checkinDate: r.checkin_date as string,
-          slug: r.slug as string,
-          label: r.label as string,
-          type: r.type as 'cliente' | 'concorrente',
-          roomName: r.room_name as string,
-          roomId: r.room_id as string | null,
-          maxPersons: r.max_persons as number,
-          mealPlan: r.meal_plan as string | null,
-          cancellation: r.cancellation as string | null,
-          priceBrl: r.price_brl as number,
-          scrapedAt: r.scraped_at as string,
-        })));
+      try {
+        setRates(await fetchBookingRatesRange(hotelId, from, to));
+      } catch {
+        setRates([]);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     }
     load();
   }, [hotelId, yearMonth]);
+
+  return { rates, loading };
+}
+
+export function useBookingRatesForMonths(hotelId: number, yearMonths: string[]) {
+  const [rates, setRates] = useState<BookingRate[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      const months = [...new Set(yearMonths.filter(Boolean))].sort();
+      const today = localDateKey();
+
+      if (!hotelId || months.length === 0) {
+        setRates([]);
+        setLoading(false);
+        return;
+      }
+
+      const firstMonth = months[0];
+      const lastMonth = months[months.length - 1];
+      const [lastY, lastM] = lastMonth.split('-').map(Number);
+      const lastDay = new Date(lastY, lastM, 0).getDate();
+      const monthStart = `${firstMonth}-01`;
+      const from = monthStart < today ? today : monthStart;
+      const to = `${lastMonth}-${String(lastDay).padStart(2, '0')}`;
+
+      try {
+        const loaded = await fetchBookingRatesRange(hotelId, from, to, false);
+        setRates(loaded.filter(r => months.includes(r.checkinDate.slice(0, 7))));
+      } catch {
+        setRates([]);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    load();
+  }, [hotelId, yearMonths.join('|')]);
 
   return { rates, loading };
 }
@@ -226,25 +336,35 @@ export function useHotelsMonthly() {
   useEffect(() => {
     async function load() {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('vw_hotel_monthly_kpis')
-        .select('*');
-      if (!error && data) {
-        setRows((data as Record<string, unknown>[]).map(r => ({
-          hotelId:   r.hotel_id    as number,
-          mesAno:    r.mes_ano     as string,
-          receita:   (r.receita    as number) ?? 0,
-          recDiarias:(r.rec_diarias as number) ?? 0,
-          occ:       (r.occ        as number) ?? 0,
-          dm:         r.dm         as number | null,
-          revpar:     r.revpar     as number | null,
-          ocupados:  (r.ocupados   as number) ?? 0,
-          cortesia:  (r.cortesia   as number) ?? 0,
-          hospedes:  (r.hospedes   as number) ?? 0,
-          dias:      (r.dias       as number) ?? 0,
-        })));
+      try {
+        const clientIds = await fetchClientHotelIds();
+        if (clientIds.length === 0) {
+          setRows([]);
+          return;
+        }
+
+        const { data, error } = await supabase
+          .from('vw_hotel_monthly_kpis')
+          .select('*')
+          .in('hotel_id', clientIds);
+        if (!error && data) {
+          setRows((data as Record<string, unknown>[]).map(r => ({
+            hotelId:   r.hotel_id    as number,
+            mesAno:    r.mes_ano     as string,
+            receita:   (r.receita    as number) ?? 0,
+            recDiarias:(r.rec_diarias as number) ?? 0,
+            occ:       (r.occ        as number) ?? 0,
+            dm:         r.dm         as number | null,
+            revpar:     r.revpar     as number | null,
+            ocupados:  (r.ocupados   as number) ?? 0,
+            cortesia:  (r.cortesia   as number) ?? 0,
+            hospedes:  (r.hospedes   as number) ?? 0,
+            dias:      (r.dias       as number) ?? 0,
+          })));
+        }
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     }
     load();
   }, []);
@@ -265,23 +385,33 @@ export function useHotelMetas(mesAno: string) {
     if (!mesAno) return;
     async function load() {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('hotel_metas')
-        .select('*')
-        .eq('mes_ano', mesAno);
+      try {
+        const clientIds = await fetchClientHotelIds();
+        if (clientIds.length === 0) {
+          setMetas([]);
+          return;
+        }
 
-      if (!error && data) {
-        setMetas((data as Record<string, unknown>[]).map(r => ({
-          id:           r.id          as number,
-          hotelId:      r.hotel_id    as number,
-          mesAno:       r.mes_ano     as string,
-          receitaMeta:  r.receita_meta as number | null,
-          occMeta:      r.occ_meta    as number | null,
-          dmMeta:       r.dm_meta     as number | null,
-          revparMeta:   r.revpar_meta as number | null,
-        })));
+        const { data, error } = await supabase
+          .from('hotel_metas')
+          .select('*')
+          .eq('mes_ano', mesAno)
+          .in('hotel_id', clientIds);
+
+        if (!error && data) {
+          setMetas((data as Record<string, unknown>[]).map(r => ({
+            id:           r.id          as number,
+            hotelId:      r.hotel_id    as number,
+            mesAno:       r.mes_ano     as string,
+            receitaMeta:  r.receita_meta as number | null,
+            occMeta:      r.occ_meta    as number | null,
+            dmMeta:       r.dm_meta     as number | null,
+            revparMeta:   r.revpar_meta as number | null,
+          })));
+        }
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     }
     load();
   }, [mesAno, version]);
@@ -319,13 +449,27 @@ export function usePickup(hotelId: number) {
   useEffect(() => {
     async function load() {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('vw_pickup_diario')
-        .select('*')
-        .eq('hotel_id', hotelId)
-        .order('data_referencia', { ascending: true });
+      const pageSize = 1000;
+      const allRows: PickupRow[] = [];
+      let from = 0;
 
-      if (!error && data) setRows(data as PickupRow[]);
+      while (true) {
+        const { data, error } = await supabase
+          .from('vw_pickup_diario')
+          .select('*')
+          .eq('hotel_id', hotelId)
+          .order('data_referencia', { ascending: true })
+          .order('data_extracao', { ascending: true })
+          .range(from, from + pageSize - 1);
+
+        if (error) break;
+        const page = (data ?? []) as PickupRow[];
+        allRows.push(...page);
+        if (page.length < pageSize) break;
+        from += pageSize;
+      }
+
+      setRows(allRows.filter(r => isPickupExtractionAllowed(r.data_extracao, r.data_referencia)));
       setLoading(false);
     }
     load();
@@ -343,22 +487,32 @@ export function useAllMetas() {
   useEffect(() => {
     async function load() {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('hotel_metas')
-        .select('*');
+      try {
+        const clientIds = await fetchClientHotelIds();
+        if (clientIds.length === 0) {
+          setMetas([]);
+          return;
+        }
 
-      if (!error && data) {
-        setMetas((data as Record<string, unknown>[]).map(r => ({
-          id:           r.id           as number,
-          hotelId:      r.hotel_id     as number,
-          mesAno:       r.mes_ano      as string,
-          receitaMeta:  r.receita_meta as number | null,
-          occMeta:      r.occ_meta     as number | null,
-          dmMeta:       r.dm_meta      as number | null,
-          revparMeta:   r.revpar_meta  as number | null,
-        })));
+        const { data, error } = await supabase
+          .from('hotel_metas')
+          .select('*')
+          .in('hotel_id', clientIds);
+
+        if (!error && data) {
+          setMetas((data as Record<string, unknown>[]).map(r => ({
+            id:           r.id           as number,
+            hotelId:      r.hotel_id     as number,
+            mesAno:       r.mes_ano      as string,
+            receitaMeta:  r.receita_meta as number | null,
+            occMeta:      r.occ_meta     as number | null,
+            dmMeta:       r.dm_meta      as number | null,
+            revparMeta:   r.revpar_meta  as number | null,
+          })));
+        }
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     }
     load();
   }, []);
@@ -381,41 +535,173 @@ export function usePickupSummary() {
   useEffect(() => {
     async function load() {
       setLoading(true);
-      const now = new Date();
-      const mesAtual = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-      const from = `${mesAtual}-01`;
-      const [y, mo] = mesAtual.split('-').map(Number);
-      const lastDay = new Date(y, mo, 0).getDate();
-      const to = `${mesAtual}-${String(lastDay).padStart(2, '0')}`;
-
-      const { data, error } = await supabase
-        .from('vw_pickup_diario')
-        .select('hotel_id, pu_tt_uh, pu_rec_hosp, data_extracao_ant')
-        .gte('data_referencia', from)
-        .lte('data_referencia', to);
-
-      if (!error && data) {
-        const byHotel = new Map<number, { uhs: number; rec: number }>();
-        for (const r of data as Record<string, unknown>[]) {
-          if (r.data_extracao_ant == null) continue;
-          const hid = r.hotel_id as number;
-          const acc = byHotel.get(hid) ?? { uhs: 0, rec: 0 };
-          acc.uhs += (r.pu_tt_uh as number) || 0;
-          acc.rec += parseFloat(String(r.pu_rec_hosp)) || 0;
-          byHotel.set(hid, acc);
+      try {
+        const clientIds = await fetchClientHotelIds();
+        if (clientIds.length === 0) {
+          setSummaries([]);
+          return;
         }
-        setSummaries([...byHotel.entries()].map(([hid, v]) => ({
-          hotelId: hid,
-          pu7dUhs: v.uhs,
-          pu7dReceita: v.rec,
-        })));
+
+        const now = new Date();
+        const mesAtual = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        const from = `${mesAtual}-01`;
+        const [y, mo] = mesAtual.split('-').map(Number);
+        const lastDay = new Date(y, mo, 0).getDate();
+        const to = `${mesAtual}-${String(lastDay).padStart(2, '0')}`;
+
+        const { data, error } = await supabase
+          .from('vw_pickup_diario')
+          .select('hotel_id, pu_tt_uh, pu_rec_hosp, data_extracao, data_extracao_ant, data_referencia')
+          .in('hotel_id', clientIds)
+          .gte('data_referencia', from)
+          .lte('data_referencia', to);
+
+        if (!error && data) {
+          const byHotel = new Map<number, { uhs: number; rec: number }>();
+          for (const r of data as Record<string, unknown>[]) {
+            if (r.data_extracao_ant == null) continue;
+            if (!isPickupExtractionAllowed(r.data_extracao as string | null, r.data_referencia as string | null)) continue;
+            const hid = r.hotel_id as number;
+            const acc = byHotel.get(hid) ?? { uhs: 0, rec: 0 };
+            acc.uhs += (r.pu_tt_uh as number) || 0;
+            acc.rec += parseFloat(String(r.pu_rec_hosp)) || 0;
+            byHotel.set(hid, acc);
+          }
+          setSummaries([...byHotel.entries()].map(([hid, v]) => ({
+            hotelId: hid,
+            pu7dUhs: v.uhs,
+            pu7dReceita: v.rec,
+          })));
+        }
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     }
     load();
   }, []);
 
   return { summaries, loading };
+}
+
+// Monthly pickup KPIs for the Pickup > Mensal tab.
+
+export interface PickupMensalKpi {
+  hotelId: number;
+  hotelNome: string;
+  hotelAtivo: boolean;
+  ano: number;
+  mes: number;
+  mesAno: string;
+  primeiraExtracao: string | null;
+  ultimaExtracao: string | null;
+  diasReferencia: number;
+  extracoes: number;
+  snapshotsComparaveis: number;
+  diasComAlteracao: number;
+  pickupUhs: number;
+  pickupReceita: number;
+  pickupOccMediaPp: number;
+  pickupReceitaPorUh: number | null;
+  receitaReal: number;
+  uhsOcupadasReal: number;
+  occRealMedia: number;
+  dmRealMedia: number;
+  revparRealMedia: number;
+  receitaMeta: number | null;
+  occMeta: number | null;
+  dmMeta: number | null;
+  revparMeta: number | null;
+  receitaVsMeta: number | null;
+  receitaMetaPct: number | null;
+  receitaMom: number | null;
+  receitaMomPct: number | null;
+  pickupReceitaMom: number | null;
+  pickupReceitaMomPct: number | null;
+  pickupUhsMom: number | null;
+}
+
+function num(value: unknown): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function nullableNum(value: unknown): number | null {
+  if (value == null) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+export function usePickupMensalKpis(hotelId: number, ano: number) {
+  const [rows, setRows] = useState<PickupMensalKpi[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!hotelId || !ano) {
+      setRows([]);
+      setLoading(false);
+      return;
+    }
+
+    async function load() {
+      setLoading(true);
+      setError(null);
+      try {
+        const { data, error: err } = await supabase
+          .from('vw_pickup_mensal_kpis')
+          .select('*')
+          .eq('hotel_id', hotelId)
+          .eq('ano', ano)
+          .order('mes', { ascending: true });
+
+        if (err) throw err;
+
+        setRows(((data ?? []) as Record<string, unknown>[]).map(r => ({
+          hotelId: num(r.hotel_id),
+          hotelNome: (r.hotel_nome as string) ?? '',
+          hotelAtivo: Boolean(r.hotel_ativo),
+          ano: num(r.ano),
+          mes: num(r.mes),
+          mesAno: (r.mes_ano as string) ?? '',
+          primeiraExtracao: (r.primeira_extracao as string | null) ?? null,
+          ultimaExtracao: (r.ultima_extracao as string | null) ?? null,
+          diasReferencia: num(r.dias_referencia),
+          extracoes: num(r.extracoes),
+          snapshotsComparaveis: num(r.snapshots_comparaveis),
+          diasComAlteracao: num(r.dias_com_alteracao),
+          pickupUhs: num(r.pickup_uhs),
+          pickupReceita: num(r.pickup_receita),
+          pickupOccMediaPp: num(r.pickup_occ_media_pp),
+          pickupReceitaPorUh: nullableNum(r.pickup_receita_por_uh),
+          receitaReal: num(r.receita_real),
+          uhsOcupadasReal: num(r.uhs_ocupadas_real),
+          occRealMedia: num(r.occ_real_media),
+          dmRealMedia: num(r.dm_real_media),
+          revparRealMedia: num(r.revpar_real_media),
+          receitaMeta: nullableNum(r.receita_meta),
+          occMeta: nullableNum(r.occ_meta),
+          dmMeta: nullableNum(r.dm_meta),
+          revparMeta: nullableNum(r.revpar_meta),
+          receitaVsMeta: nullableNum(r.receita_vs_meta),
+          receitaMetaPct: nullableNum(r.receita_meta_pct),
+          receitaMom: nullableNum(r.receita_mom),
+          receitaMomPct: nullableNum(r.receita_mom_pct),
+          pickupReceitaMom: nullableNum(r.pickup_receita_mom),
+          pickupReceitaMomPct: nullableNum(r.pickup_receita_mom_pct),
+          pickupUhsMom: nullableNum(r.pickup_uhs_mom),
+        })));
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Erro ao carregar pickup mensal');
+        setRows([]);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    load();
+  }, [hotelId, ano]);
+
+  return { rows, loading, error };
 }
 
 // ─── Pickup Acumulado Mensal ─────────────────────────────────────────
@@ -457,8 +743,10 @@ export function usePickupAcumuladoMensal(hotelId: number, extracaoMes: string) {
         .from('pickup_acumulado')
         .select('hotel_id,data_referencia,data_extracao,uhs_total,uhs_ocupadas,occ_pct,rec_total,total_snapshots')
         .eq('hotel_id', hotelId)
-        .gte('data_extracao', from)
-        .lte('data_extracao', to)
+        .gte('data_extracao',    from)
+        .lte('data_extracao',    to)
+        .gte('data_referencia',  from)   // só noites do mesmo mês
+        .lte('data_referencia',  to)
         .order('data_referencia', { ascending: true })
         .order('data_extracao',   { ascending: true });
 

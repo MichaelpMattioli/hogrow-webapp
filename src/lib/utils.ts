@@ -23,6 +23,17 @@ export function formatPercent(value: number): string {
   return value.toFixed(1).replace('.', ',') + '%';
 }
 
+export function localDateKey(date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+export function localMonthKey(date = new Date()): string {
+  return localDateKey(date).slice(0, 7);
+}
+
 export const STATUS_CONFIG: Record<string, StatusConfig> = {
   excellent: { label: 'Excelente', color: '#10B981', bg: '#ECFDF5' },
   healthy: { label: 'Saudável', color: '#3B82F6', bg: '#EBF2FF' },

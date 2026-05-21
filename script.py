@@ -71,38 +71,11 @@ def main():
                 continue
 
             # ==========================================
-            # 2. BOLETIM DE OCUPAÇÃO (Envio em Massa)
+            # 2. BOLETIM DE OCUPACAO
             # ==========================================
-            arq_bol = date_dir / "table_boletim_ocupacao.json"
-            if arq_bol.exists():
-                with open(arq_bol, 'r', encoding='utf-8') as f:
-                    boletins = json.load(f)
-                
-                if boletins:
-                    # Como o boletim envia um bloco cumulativo do ano/mês, limpamos os perídos atuais 
-                    periodos = set((b.get("ano"), b.get("mes")) for b in boletins)
-                    for ano, mes in periodos:
-                        if ano and mes:
-                            supabase.table("boletim_ocupacao") \
-                                .delete() \
-                                .eq("hotel_id", hotel_id) \
-                                .eq("ano", ano) \
-                                .eq("mes", mes) \
-                                .eq("data_extracao", date_dir.name) \
-                                .execute()
-                    
-                    # Insere envios em blocos de 500 no Supabase
-                    for chunk in chunked_iterable(boletins, 500):
-                        for c in chunk:
-                            c["hotel_id"] = hotel_id
-                            c["data_extracao"] = date_dir.name
-                            # Garante que os valores numéricos não cheguem como null, evitando erro de constraint
-                            for k in ["checkin_qty", "checkout_qty", "uhs_ocupadas", "hospedes"]:
-                                if c.get(k) is None:
-                                    c[k] = 0
-                        supabase.table("boletim_ocupacao").insert(chunk).execute()
-                        
-                    print(f"      ✓ {len(boletins)} registros de Boletim criados/atualizados por lote.")
+            # O boletim atual agora e derivado de hotel_receita_diaria pela view
+            # public.vw_boletim_ocupacao_atual. Este loader nao grava mais
+            # public.boletim_ocupacao.
 
             # ==========================================
             # 3. RECEITA DIÁRIA (Revenues & Occupations)
