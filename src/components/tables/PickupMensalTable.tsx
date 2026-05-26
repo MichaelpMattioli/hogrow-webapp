@@ -172,45 +172,18 @@ interface Props {
   pickupRows?: PickupRow[];
 }
 
-function hasDailyPickupChange(row: PickupRow) {
-  return row.data_extracao_ant !== null && (
-    row.pu_tt_uh !== 0 ||
-    parseFloat(row.pu_rec_hosp) !== 0 ||
-    parseFloat(row.pu_dm_tt) !== 0 ||
-    parseFloat(row.pu_occ_tt) !== 0 ||
-    parseFloat(row.pu_revpar_tt) !== 0
-  );
-}
-
-export default function PickupMensalTable({ hotelId, pickupRows }: Props) {
+export default function PickupMensalTable({ hotelId }: Props) {
   const [ano, setAno] = useState(new Date().getFullYear());
   const { rows, loading, error } = usePickupMensalKpis(hotelId, ano);
 
   const rowsByMes = useMemo(() => new Map(rows.map(r => [r.mes, r])), [rows]);
-  const dailyChangesByMonth = useMemo(() => {
-    if (!pickupRows) return null;
-
-    const counts = new Map<string, number>();
-    for (const row of pickupRows) {
-      const extractionMonth = row.data_extracao.slice(0, 7);
-      const referenceMonth = row.data_referencia.slice(0, 7);
-      if (extractionMonth !== referenceMonth || !hasDailyPickupChange(row)) continue;
-      counts.set(referenceMonth, (counts.get(referenceMonth) ?? 0) + 1);
-    }
-    return counts;
-  }, [pickupRows]);
-
   const monthRows = useMemo<MonthRow[]>(() => (
     MES_PT.map((label, idx) => {
       const mes = idx + 1;
       const data = rowsByMes.get(mes) ?? null;
-      const mesAno = data?.mesAno ?? `${ano}-${String(mes).padStart(2, '0')}`;
-      const dailyChangeCount = dailyChangesByMonth?.get(mesAno);
       const alteracoesDiarias = data == null
         ? null
-        : dailyChangesByMonth
-          ? dailyChangeCount ?? 0
-          : data.diasComAlteracao;
+        : data.alteracoesDiariasMes;
 
       return {
         mes,
@@ -219,7 +192,7 @@ export default function PickupMensalTable({ hotelId, pickupRows }: Props) {
         alteracoesDiarias,
       };
     })
-  ), [ano, dailyChangesByMonth, rowsByMes]);
+  ), [rowsByMes]);
 
   const totals = useMemo(() => ({
     pickupReceita: rows.reduce((sum, row) => sum + row.pickupReceita, 0),

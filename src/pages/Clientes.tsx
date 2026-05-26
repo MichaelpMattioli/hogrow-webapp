@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useAllMetas, useHotels, useHotelMetas, useHotelsMonthly, type MonthlyKpi } from '@/hooks/useSupabase';
+import { useClientesPage, type ClientesPageRow, type MonthlyKpi } from '@/hooks/useSupabase';
 import { Loader2, ChevronUp, ChevronDown, TrendingUp, TrendingDown, Minus, ChevronsUpDown, Hash } from 'lucide-react';
 import type { HotelSummary, HotelMeta } from '@/data/types';
 import { STATUS_CONFIG } from '@/lib/utils';
@@ -330,6 +330,63 @@ function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
 
 // ─── Table row ────────────────────────────────────────────────────────────────
 
+function LoadingRows() {
+  return (
+    <>
+      {Array.from({ length: 8 }).map((_, rowIdx) => (
+        <tr key={rowIdx}>
+          {Array.from({ length: 10 }).map((__, colIdx) => (
+            <td
+              key={colIdx}
+              style={{
+                padding: '13px 16px',
+                borderBottom: '1px solid var(--border-l)',
+                textAlign: colIdx <= 1 ? 'left' : 'center',
+              }}
+            >
+              <span
+                style={{
+                  display: 'inline-block',
+                  width: colIdx === 1 ? 160 : colIdx === 0 ? 18 : 76,
+                  maxWidth: '100%',
+                  height: colIdx === 1 ? 13 : 12,
+                  borderRadius: 99,
+                  background: 'linear-gradient(90deg, var(--surface-h), var(--border-l), var(--surface-h))',
+                  opacity: 0.72,
+                }}
+              />
+            </td>
+          ))}
+        </tr>
+      ))}
+    </>
+  );
+}
+
+function TableMessage({ children, tone = 'muted' }: { children: React.ReactNode; tone?: 'muted' | 'error' }) {
+  return (
+    <tr>
+      <td colSpan={10} style={{ padding: 0 }}>
+        <div
+          style={{
+            minHeight: 170,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            textAlign: 'center',
+            padding: '32px 24px',
+            color: tone === 'error' ? 'var(--red)' : 'var(--text-m)',
+            fontSize: 13,
+            fontWeight: 700,
+          }}
+        >
+          {children}
+        </div>
+      </td>
+    </tr>
+  );
+}
+
 function HotelRow({
   hotel, meta, annualMeta, onClick, idx, full, referenceMonth,
 }: { hotel: HotelSummary; meta?: HotelMeta; annualMeta?: number; onClick: () => void; idx: number; full: boolean; referenceMonth: string }) {
@@ -516,6 +573,56 @@ function getSortValue(h: HotelSummary, meta: HotelMeta | undefined, col: SortCol
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+function clientesRowToHotel(row: ClientesPageRow): HotelSummary {
+  return {
+    id: row.hotelId,
+    name: row.hotelNome,
+    razaoSocial: row.hotelNome,
+    city: row.cidade ?? '--',
+    state: row.estado ?? '--',
+    uhs: row.totalUhs,
+    leitos: null,
+    ativo: true,
+    avgOcc: row.occReferencia,
+    avgRevpar: row.revparReferencia,
+    avgDm: row.dmReferencia,
+    totalReceita: row.receitaRealYtd,
+    totalRecDiarias: 0,
+    totalRecAb: 0,
+    diasComDados: 0,
+    receitaMesAnterior: row.receitaMesAnterior,
+    receitaMesAtual: row.receitaReal,
+    receitaMesQueVem: 0,
+    occMesAnterior: 0,
+    occMesAtual: row.occReferencia,
+    occMesQueVem: 0,
+    ocupadosMesAtual: 0,
+    cortesiaMesAtual: 0,
+    recDiariasMesAtual: 0,
+    hospedesMesAtual: 0,
+    diasMesAtual: 0,
+    recDiariasMesAnterior: 0,
+    ocupadosMesAnterior: 0,
+    receitaAnoAnterior: row.receitaAnoAnterior,
+    recDiariasAnoAnterior: 0,
+    occAnoAnterior: 0,
+    ocupadosAnoAnterior: 0,
+    receitaYTD: row.receitaRealYtd,
+    ocupadosYTD: 0,
+    hospedesYTD: 0,
+    occAvgYTD: row.occReferencia,
+    dmYTD: row.dmReferencia,
+    latestDate: '--',
+    latestExtracao: '--',
+    latestOcc: row.occReferencia,
+    latestRevpar: row.revparReferencia,
+    latestDm: row.dmReferencia,
+    latestRecTotal: row.receitaReal,
+    latestOcupados: 0,
+    status: row.status,
+  };
+}
+
 export default function Clientes() {
   const [sortCol, setSortCol]     = useState<SortCol>('receita');
   const [sortDir, setSortDir]     = useState<SortDir>('desc');
@@ -525,18 +632,14 @@ export default function Clientes() {
   const [searchParams] = useSearchParams();
   const q = (searchParams.get('q') ?? '').toLowerCase().trim();
 
-  const { hotels, loading: hotelsLoading, error } = useHotels();
-  const { rows: monthlyRows, loading: monthlyLoading } = useHotelsMonthly();
-  const { metas }                  = useHotelMetas(selectedMonth);
-  const { metas: allMetas, loading: allMetasLoading } = useAllMetas();
-  const loading = hotelsLoading || monthlyLoading || allMetasLoading;
+  const { rows, loading, error } = useClientesPage(selectedMonth);
 
   const availableMonths = useMemo(() => {
-    const months = [...new Set(monthlyRows.map(row => row.mesAno))];
+    const months = [...new Set(rows.flatMap(row => row.availableMonths))];
     const current = currentMesAno();
     if (!months.includes(current)) months.push(current);
     return months.sort();
-  }, [monthlyRows]);
+  }, [rows]);
 
   useEffect(() => {
     if (availableMonths.length === 0 || availableMonths.includes(selectedMonth)) return;
@@ -544,49 +647,34 @@ export default function Clientes() {
     setSelectedMonth(availableMonths.includes(current) ? current : availableMonths[availableMonths.length - 1]);
   }, [availableMonths, selectedMonth]);
 
-  const monthlyIndex = useMemo(() => {
-    const rowsByKey = new Map<string, MonthlyKpi>();
-    const rowsByHotel = new Map<number, MonthlyKpi[]>();
-
-    monthlyRows.forEach(row => {
-      rowsByKey.set(`${row.hotelId}|${row.mesAno}`, row);
-      const rows = rowsByHotel.get(row.hotelId) ?? [];
-      rows.push(row);
-      rowsByHotel.set(row.hotelId, rows);
-    });
-
-    rowsByHotel.forEach(rows => rows.sort((a, b) => a.mesAno.localeCompare(b.mesAno)));
-    return { rowsByKey, rowsByHotel };
-  }, [monthlyRows]);
-
   const referenceHotels = useMemo(
-    () => hotels.map(hotel => buildMonthlyHotelSummary(
-      hotel,
-      selectedMonth,
-      monthlyIndex.rowsByKey,
-      monthlyIndex.rowsByHotel,
-    )),
-    [hotels, monthlyIndex, selectedMonth]
+    () => rows.map(clientesRowToHotel),
+    [rows]
   );
 
   const metaMap = useMemo(() => {
     const m = new Map<number, HotelMeta>();
-    metas.forEach(mt => m.set(mt.hotelId, mt));
+    rows.forEach(row => {
+      if (!ok(row.receitaMeta)) return;
+      m.set(row.hotelId, {
+        hotelId: row.hotelId,
+        mesAno: row.selectedMesAno || selectedMonth,
+        receitaMeta: row.receitaMeta,
+        occMeta: null,
+        dmMeta: null,
+        revparMeta: null,
+      });
+    });
     return m;
-  }, [metas]);
+  }, [rows, selectedMonth]);
 
   const annualMetaMap = useMemo(() => {
-    const selectedYear = selectedMonth.slice(0, 4);
     const m = new Map<number, number>();
-
-    allMetas.forEach(meta => {
-      if (!meta.mesAno.startsWith(`${selectedYear}-`) || meta.mesAno > selectedMonth) return;
-      if (!ok(meta.receitaMeta)) return;
-      m.set(meta.hotelId, (m.get(meta.hotelId) ?? 0) + meta.receitaMeta);
+    rows.forEach(row => {
+      if (ok(row.receitaMetaYtd)) m.set(row.hotelId, row.receitaMetaYtd);
     });
-
     return m;
-  }, [allMetas, selectedMonth]);
+  }, [rows]);
 
   function handleSort(col: SortCol) {
     if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -615,24 +703,9 @@ export default function Clientes() {
     });
   }, [filtered, sortCol, sortDir, metaMap, annualMetaMap]);
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 size={22} className="animate-spin" style={{ color: 'var(--accent)' }} />
-        <span className="ml-2" style={{ fontSize: 13, color: 'var(--text-m)' }}>Carregando...</span>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="text-center py-20">
-        <p style={{ color: 'var(--red)', fontWeight: 600 }}>{error}</p>
-      </div>
-    );
-  }
-
   const shProps = { active: sortCol, dir: sortDir, onSort: handleSort };
+  const isInitialLoading = loading && referenceHotels.length === 0;
+  const isRefreshing = loading && referenceHotels.length > 0;
 
   return (
     <div className="fade-in">
@@ -641,9 +714,11 @@ export default function Clientes() {
         <div>
           <h2 style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.4px' }}>Clientes</h2>
           <p style={{ fontSize: 12.5, color: 'var(--text-m)', marginTop: 2 }}>
-            {q
+            {isInitialLoading
+              ? 'Carregando dados da tabela'
+              : q
               ? `${sorted.length} resultado${sorted.length !== 1 ? 's' : ''} para "${q}"`
-              : `${hotels.length} ${hotels.length === 1 ? 'hotel' : 'hotéis'} · receita por referência`}
+              : `${referenceHotels.length} ${referenceHotels.length === 1 ? 'hotel' : 'hotéis'} · receita por referência`}
           </p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
@@ -677,7 +752,7 @@ export default function Clientes() {
         </div>
       </div>
 
-      {sorted.length === 0 ? (
+      {!isInitialLoading && !error && sorted.length === 0 ? (
         <div style={{
           padding: '64px 24px', background: 'var(--surface)',
           border: '1px solid var(--border)', borderRadius: 'var(--r)', textAlign: 'center',
@@ -688,6 +763,7 @@ export default function Clientes() {
         </div>
       ) : (
         <div style={{
+          position: 'relative',
           background: 'var(--surface)',
           border: '1px solid var(--border)',
           borderRadius: 'var(--r)',
@@ -748,21 +824,56 @@ export default function Clientes() {
               </thead>
 
               <tbody>
-                {sorted.map((h, i) => (
-                  <HotelRow
-                    key={h.id}
-                    hotel={h}
-                    meta={metaMap.get(h.id)}
-                    annualMeta={annualMetaMap.get(h.id)}
-                    onClick={() => navigate(`/clientes/${h.id}`)}
-                    idx={i}
-                    full={fullNumbers}
-                    referenceMonth={selectedMonth}
-                  />
-                ))}
+                {isInitialLoading ? (
+                  <LoadingRows />
+                ) : error ? (
+                  <TableMessage tone="error">{error}</TableMessage>
+                ) : sorted.length === 0 ? (
+                  <TableMessage>
+                    {q ? `Nenhum hotel encontrado para "${q}"` : 'Nenhum hotel cadastrado'}
+                  </TableMessage>
+                ) : (
+                  sorted.map((h, i) => (
+                    <HotelRow
+                      key={h.id}
+                      hotel={h}
+                      meta={metaMap.get(h.id)}
+                      annualMeta={annualMetaMap.get(h.id)}
+                      onClick={() => navigate(`/clientes/${h.id}`)}
+                      idx={i}
+                      full={fullNumbers}
+                      referenceMonth={selectedMonth}
+                    />
+                  ))
+                )}
               </tbody>
             </table>
           </div>
+
+          {isRefreshing && (
+            <div
+              style={{
+                position: 'absolute',
+                top: 10,
+                right: 12,
+                zIndex: 3,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 7,
+                padding: '6px 10px',
+                borderRadius: 'var(--rx)',
+                border: '1px solid var(--border)',
+                background: 'color-mix(in srgb, var(--surface) 92%, transparent)',
+                boxShadow: 'var(--sh)',
+                color: 'var(--text-m)',
+                fontSize: 11,
+                fontWeight: 800,
+              }}
+            >
+              <Loader2 size={12} className="animate-spin" style={{ color: 'var(--accent)' }} />
+              Atualizando tabela
+            </div>
+          )}
 
           {/* ── Footer ── */}
           <div style={{

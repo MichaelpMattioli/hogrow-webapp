@@ -57,10 +57,6 @@ function fmtReferencePeriod(months: string[]) {
   return `${fmtYearMonth(months[0])} a ${fmtYearMonth(months[months.length - 1])} (${months.length} meses)`;
 }
 
-function isPickupExtractionAllowed(r: PickupRow) {
-  return r.data_extracao.slice(0, 7) <= r.data_referencia.slice(0, 7);
-}
-
 function rateScrapeDate(rate: BookingRate) {
   return rate.scrapedAt.slice(0, 10);
 }
@@ -323,7 +319,7 @@ export default function PickupTable({
   shopperRates,
 }: PickupTableProps) {
   const validData = useMemo(
-    () => data.filter(isPickupExtractionAllowed),
+    () => data.filter(r => Boolean(r.data_extracao && r.data_referencia)),
     [data]
   );
 

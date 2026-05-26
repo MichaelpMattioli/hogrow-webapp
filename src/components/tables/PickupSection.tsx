@@ -13,6 +13,8 @@ interface Props {
   availableMeses: string[];
   onReferenceChange: (months: string[]) => void;
   shopperRates: BookingRate[];
+  loading?: boolean;
+  error?: string | null;
 }
 
 export default function PickupSection({
@@ -22,6 +24,8 @@ export default function PickupSection({
   availableMeses,
   onReferenceChange,
   shopperRates,
+  loading = false,
+  error = null,
 }: Props) {
   const [view, setView] = useState<PickupView>('diario');
 
@@ -73,7 +77,15 @@ export default function PickupSection({
         </div>
       </div>
 
-      {view === 'diario' ? (
+      {view === 'diario' && loading ? (
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r)', padding: 32, textAlign: 'center', color: 'var(--text-m)', fontSize: 12 }}>
+          Carregando pick-up...
+        </div>
+      ) : view === 'diario' && error ? (
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r)', padding: 32, textAlign: 'center', color: 'var(--red)', fontSize: 12, fontWeight: 700 }}>
+          {error}
+        </div>
+      ) : view === 'diario' ? (
         <PickupTable
           data={pickupRows}
           selectedMonths={selectedMeses}

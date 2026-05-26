@@ -11,8 +11,8 @@ import {
   Search,
   Target,
 } from 'lucide-react';
-import { useHotels, useHotelMetas, saveHotelMeta } from '@/hooks/useSupabase';
-import type { HotelMeta, HotelSummary } from '@/data/types';
+import { useMetasPage, saveHotelMeta } from '@/hooks/useSupabase';
+import type { HotelMeta } from '@/data/types';
 
 type GoalField = 'receita' | 'ocupacao' | 'diaria';
 
@@ -47,6 +47,14 @@ function parseMeta(value: string) {
   const parsed = Number(value.replace(',', '.'));
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
+
+type GoalHotel = {
+  id: number;
+  name: string;
+  city: string;
+  state: string;
+  uhs: number;
+};
 
 interface GoalInputCardProps {
   field: GoalField;
@@ -140,7 +148,7 @@ function GoalInputCard({ field, title, icon, value, onChange, prefix, suffix }: 
 }
 
 interface HotelGoalRowProps {
-  hotel: HotelSummary;
+  hotel: GoalHotel;
   meta?: HotelMeta;
   onSave: (hotelId: number, receita: number | null, occ: number | null, dm: number | null, revpar: number | null) => Promise<void>;
 }
@@ -304,10 +312,32 @@ export default function Metas() {
   const [mesAno, setMesAno] = useState(currentMes);
   const [query, setQuery] = useState('');
 
-  const { hotels, loading: hotelsLoading, error: hotelsError } = useHotels();
-  const { metas, loading: metasLoading, reload } = useHotelMetas(mesAno);
-  const loading = hotelsLoading || metasLoading;
+  const { rows, loading, error: metasError, reload } = useMetasPage(mesAno);
   const monthIdx = MONTHS.indexOf(mesAno);
+
+  const hotels = useMemo<GoalHotel[]>(() => (
+    rows.map(row => ({
+      id: row.hotelId,
+      name: row.hotelNome,
+      city: row.cidade ?? '--',
+      state: row.estado ?? '--',
+      uhs: row.totalUhs,
+    }))
+  ), [rows]);
+
+  const metas = useMemo<HotelMeta[]>(() => (
+    rows
+      .filter(row => row.metaId != null || row.receitaMeta != null || row.occMeta != null || row.dmMeta != null || row.revparMeta != null)
+      .map(row => ({
+        id: row.metaId ?? undefined,
+        hotelId: row.hotelId,
+        mesAno: row.mesAno || mesAno,
+        receitaMeta: row.receitaMeta,
+        occMeta: row.occMeta,
+        dmMeta: row.dmMeta,
+        revparMeta: row.revparMeta,
+      }))
+  ), [rows, mesAno]);
 
   const metaMap = useMemo(() => {
     const map = new Map<number, HotelMeta>();
@@ -522,9 +552,9 @@ export default function Metas() {
           <Loader2 size={24} className="animate-spin" style={{ color: 'var(--accent)' }} />
           <span className="ml-2" style={{ fontSize: 13, color: 'var(--text-m)' }}>Carregando...</span>
         </div>
-      ) : hotelsError ? (
+      ) : metasError ? (
         <div style={{ padding: 28, textAlign: 'center', color: 'var(--red)', fontWeight: 800 }}>
-          {hotelsError}
+          {metasError}
         </div>
       ) : (
         <div style={{

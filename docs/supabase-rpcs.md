@@ -17,10 +17,10 @@ Objetivo: cada tela deve ter uma fonte de dados clara, com contrato estavel, men
 
 | Tela | RPC/View | Status | Motivo |
 | --- | --- | --- | --- |
-| Metas (`/metas`) | `public.rpc_metas_page(p_mes_ano text)` | Proposta v1 | Carregar hoteis clientes e metas do mes em uma unica chamada leve. |
+| Metas (`/metas`) | `public.rpc_metas_page(p_mes_ano text)` | Implementada localmente | Carregar hoteis clientes e metas do mes em uma unica chamada leve. |
 | Home (`/`) | `public.rpc_home_page(p_mes_ano text, p_data_extracao date)` | Implementada localmente | Carregar KPIs do portfolio, alertas de pick-up de hoje e atingimento de metas em uma unica chamada. |
-| Clientes (`/clientes`) | `public.rpc_clientes_page(p_mes_ano text)` | Proposta v1 | Carregar ranking de clientes por mes de referencia, metas e acumulado anual em uma unica chamada. |
-| Detalhamento Cliente (`/clientes/:id`) | `public.rpc_cliente_detalhe_shell(p_hotel_id bigint, p_mes_ano text)` + RPCs auxiliares | Proposta v1 | Carregar header/cards/metas rapidamente e buscar tabelas pesadas por demanda. |
+| Clientes (`/clientes`) | `public.rpc_clientes_page(p_mes_ano text)` | Implementada localmente | Carregar ranking de clientes por mes de referencia, metas e acumulado anual em uma unica chamada. |
+| Detalhamento Cliente (`/clientes/:id`) | `rpc_cliente_detalhe_header`, `rpc_cliente_detalhe_cards`, `rpc_cliente_pickup_diario`, `rpc_cliente_pickup_mensal`, `rpc_cliente_rate_shopper` | Implementada localmente | Separar header/cards de modulos pesados para carregar pick-up e shopper sob demanda. |
 
 ## Template Para Novas Telas
 
@@ -290,7 +290,10 @@ Retorno: uma linha por hotel cliente ativo.
 
 Esta versao usa `vw_hotel_summary` como fonte dos KPIs atuais porque ela ja existe. Se a Home continuar lenta, o proximo passo e criar uma view/materialized view especifica para estes campos.
 
-Implementacao local: [`../../supabase/migrations/20260526172000_create_rpc_home_page.sql`](../../supabase/migrations/20260526172000_create_rpc_home_page.sql).
+Implementacao local:
+
+- [`../../supabase/migrations/20260526172000_create_rpc_home_page.sql`](../../supabase/migrations/20260526172000_create_rpc_home_page.sql)
+- [`../../supabase/migrations/20260526173500_optimize_rpc_home_page.sql`](../../supabase/migrations/20260526173500_optimize_rpc_home_page.sql)
 
 ```sql
 create or replace function public.rpc_home_page(
@@ -942,7 +945,200 @@ export async function fetchClientesPage(mesAno: string): Promise<ClientesPageRow
 - Move agregacoes pesadas para o banco, onde indices e plano de execucao ajudam mais.
 - Mantem busca, ordenacao e toggle inteiro/abreviado no frontend sem novas consultas.
 
-## RPC Proposta: Detalhamento Cliente
+## RPC Proposta: Detalhamento Cliente v2
+
+### Contexto
+
+A rota `src/pages/ClienteDetalhe.tsx` mistura quatro familias de dados:
+
+- Header/formulario: cadastro basico de `hotel`.
+- Cards: agregados do mes selecionado, YoY, YTD e metas.
+- Pick-up: tabela diaria por mes de referencia e resumo mensal por ano.
+- Rate shopper: tarifas por mes, usadas no calendario e como colunas auxiliares do pick-up diario.
+
+A estrategia v2 separa a tela por modulos. O primeiro paint usa header e cards; pick-up e shopper carregam sob demanda quando a area esta visivel.
+
+### Mapa Modular
+
+Implementacao local:
+
+- [`../../supabase/migrations/20260526180500_create_cliente_detalhe_module_rpcs.sql`](../../supabase/migrations/20260526180500_create_cliente_detalhe_module_rpcs.sql)
+- [`../../supabase/migrations/20260526182000_fix_cliente_detalhe_cards_current_date.sql`](../../supabase/migrations/20260526182000_fix_cliente_detalhe_cards_current_date.sql)
+- [`../../supabase/migrations/20260526183500_fix_rpc_cliente_pickup_diario_full_reference_month.sql`](../../supabase/migrations/20260526183500_fix_rpc_cliente_pickup_diario_full_reference_month.sql)
+
+| Modulo | RPC | Quando carregar | Motivo |
+| --- | --- | --- | --- |
+| Header | `public.rpc_cliente_detalhe_header(p_hotel_id bigint)` | Ao abrir a pagina | Dados leves do hotel, meses disponiveis e ultimo snapshot. |
+| Cards | `public.rpc_cliente_detalhe_cards(p_hotel_id bigint, p_mes_ano text)` | Ao abrir e ao trocar mes | KPIs do mes, YoY, YTD e metas do mes, sempre limitando datas de referencia a `current_date`. |
+| Pick-up diario | `public.rpc_cliente_pickup_diario(p_hotel_id bigint, p_mes_ano text)` | Ao abrir aba/bloco de pick-up diario | Evita carregar todo o historico de `vw_pickup_diario`. |
+| Pick-up mensal | `public.rpc_cliente_pickup_mensal(p_hotel_id bigint, p_ano integer)` | Ao abrir visao mensal ou trocar ano | Mantem a tabela anual pequena e adiciona contador de alteracoes diarias. |
+| Shopper | `public.rpc_cliente_rate_shopper(p_hotel_id bigint, p_mes_ano text, p_from date, p_keep_latest boolean)` | Ao abrir calendario ou para meses do pick-up | Restringe tarifas por mes e opcionalmente mantem apenas a ultima coleta. |
+
+### Contrato: Header
+
+Nome:
+
+```sql
+public.rpc_cliente_detalhe_header(p_hotel_id bigint)
+```
+
+Retorno: uma linha por hotel cliente.
+
+| Coluna | Tipo sugerido | Uso |
+| --- | --- | --- |
+| `hotel_id` | `bigint` | Rota/key |
+| `property_id` | `text` | Formulario |
+| `tipo` | `text` | Deve ser `cliente` |
+| `razao_social` | `text` | Formulario |
+| `nome_fantasia` | `text` | Titulo |
+| `cidade` | `text` | Subtitulo |
+| `estado` | `text` | Subtitulo |
+| `total_uhs` | `integer` | Header/formulario |
+| `total_leitos` | `integer` | Formulario |
+| `cadastur` | `text` | Formulario |
+| `ativo` | `boolean` | Formulario |
+| `created_at` | `timestamptz` | Auditoria |
+| `updated_at` | `timestamptz` | Auditoria |
+| `status` | `text` | Cor do header |
+| `available_months` | `text[]` | Seletor de mes |
+| `latest_date` | `date` | Ultima referencia |
+| `latest_extracao` | `date` | Ultima extracao |
+| `latest_ocupados` | `numeric` | Ocupacao atual |
+| `latest_total_uhs` | `numeric` | Denominador do header |
+
+### Contrato: Cards
+
+Nome:
+
+```sql
+public.rpc_cliente_detalhe_cards(p_hotel_id bigint, p_mes_ano text default null)
+```
+
+Retorno: uma linha por hotel/mes.
+
+| Coluna | Tipo sugerido | Uso |
+| --- | --- | --- |
+| `hotel_id` | `bigint` | Key |
+| `selected_mes_ano` | `text` | Mes aplicado |
+| `receita_atual`, `occ_atual`, `dm_atual`, `revpar_atual` | `numeric` | Cards principais |
+| `room_nights_atual`, `hospedes_atual` | `numeric` | Cards secundarios |
+| `receita_prev_year`, `occ_prev_year`, `dm_prev_year`, `revpar_prev_year` | `numeric` | Comparacao YoY |
+| `room_nights_prev_year`, `hospedes_prev_year` | `numeric` | Comparacao YoY |
+| `receita_ytd`, `occ_ytd`, `dm_ytd`, `revpar_ytd` | `numeric` | Comparacao YTD |
+| `room_nights_ytd`, `hospedes_ytd` | `numeric` | Comparacao YTD |
+| `receita_meta`, `occ_meta`, `dm_meta`, `revpar_meta` | `numeric` | Metas do mes |
+
+### Contrato: Pick-up Diario
+
+Nome:
+
+```sql
+public.rpc_cliente_pickup_diario(p_hotel_id bigint, p_mes_ano text)
+```
+
+Retorno: apenas as colunas usadas por `PickupTable`.
+
+| Coluna | Tipo sugerido |
+| --- | --- |
+| `hotel_id` | `bigint` |
+| `data_extracao`, `data_extracao_ant`, `data_referencia` | `date` |
+| `pu_tt_uh` | `integer` |
+| `pu_rec_hosp`, `pu_dm_tt`, `pu_occ_tt`, `pu_revpar_tt` | `numeric` |
+| `tt_uhs_ocup` | `integer` |
+| `rec_hosp`, `dm_cc_tt`, `occ_tt`, `revp_tt` | `numeric` |
+| `tt_hosp`, `chds`, `uhs_disp`, `uhs` | `integer` |
+
+Filtro esperado:
+
+- `data_referencia` dentro de `p_mes_ano`.
+- `data_extracao` nao deve ser limitada pelo mes de referencia. Meses fechados podem ter snapshots finais ou ajustes em extracoes posteriores, e a UI precisa conseguir selecionar essas extracoes.
+- Ordenar por `data_extracao`, `data_referencia`.
+
+### Contrato: Pick-up Mensal
+
+Nome:
+
+```sql
+public.rpc_cliente_pickup_mensal(p_hotel_id bigint, p_ano integer)
+```
+
+Retorno: colunas de `vw_pickup_mensal_kpis` usadas na UI, mais `alteracoes_diarias_mes`.
+
+| Coluna adicional | Tipo sugerido | Uso |
+| --- | --- | --- |
+| `alteracoes_diarias_mes` | `integer` | Conta linhas do pick-up diario com alteracao real e extracao no proprio mes. |
+
+### Contrato: Rate Shopper
+
+Nome:
+
+```sql
+public.rpc_cliente_rate_shopper(
+  p_hotel_id bigint,
+  p_mes_ano text,
+  p_from date default current_date,
+  p_keep_latest boolean default true
+)
+```
+
+Retorno: apenas as colunas usadas por `RateCalendar`, `RateDayModal` e colunas shopper do pick-up.
+
+| Coluna | Tipo sugerido |
+| --- | --- |
+| `id`, `hotel_id` | `bigint` |
+| `checkin_date` | `date` |
+| `slug`, `label`, `type`, `room_name`, `room_id` | `text` |
+| `max_persons` | `integer` |
+| `meal_plan`, `cancellation` | `text` |
+| `price_brl` | `numeric` |
+| `scraped_at` | `timestamptz` |
+| `url`, `search_url` | `text` |
+
+Regras:
+
+- `p_keep_latest = true`: manter a ultima coleta por `slug + checkin_date`.
+- `p_keep_latest = false`: retornar todas as coletas do periodo para o pick-up cruzar com `data_extracao`.
+- `p_from` limita datas antigas no calendario; para pick-up, usar o primeiro dia do menor mes necessario.
+
+### Indices Recomendados
+
+```sql
+create index if not exists idx_receita_hotel_ref_extracao_desc
+  on public.hotel_receita_diaria (hotel_id, data_referencia, data_extracao desc);
+
+create index if not exists idx_hotel_tipo_ativo_nome
+  on public.hotel (tipo, ativo, nome_fantasia);
+
+create index if not exists idx_hotel_metas_mes_hotel
+  on public.hotel_metas (mes_ano, hotel_id);
+
+create index if not exists idx_booking_rates_hotel_checkin_scraped
+  on public.booking_rates (hotel_id, checkin_date, scraped_at desc);
+
+create index if not exists idx_booking_rates_hotel_slug_checkin_scraped
+  on public.booking_rates (hotel_id, slug, checkin_date, scraped_at desc);
+```
+
+Para `vw_pickup_diario`, os indices devem ficar na tabela base real. Se a fonte continuar sendo `hotel_receita_diaria`, priorizar `(hotel_id, data_referencia, data_extracao desc)`.
+
+### Uso Esperado Na Tela
+
+- Substituir `useHotelDetail(id)` por `useClienteDetalheHeader(id)` + `useClienteDetalheCards(id, selectedMes)`.
+- Manter `updateHotel(id, data)` direto em `hotel` por enquanto.
+- Substituir `useHotelMetas(metaMes)` no detalhe pelo retorno da RPC de cards.
+- Substituir `usePickup(id)` por `useClientePickupDiario(id, selectedMes)`.
+- Substituir `usePickupMensalKpis(id, ano)` por `useClientePickupMensal(id, ano)`.
+- Substituir `useBookingRates` e `useBookingRatesForMonths` por `useClienteRateShopper`.
+- Fazer lazy load de pick-up e shopper por bloco/aba, com cache por `hotelId + mesAno` ou `hotelId + ano`.
+
+### Ganho Esperado
+
+- Primeiro carregamento deixa de trafegar historico diario completo.
+- Pick-up diario passa a buscar apenas o mes visivel.
+- Pick-up mensal nao depende de recalculo no frontend para contar alteracoes.
+- Shopper reduz payload por mes e evita duplicidade quando o calendario precisa apenas da ultima coleta.
+
+## Historico: Detalhamento Cliente v1 substituida
 
 ### Contexto
 
