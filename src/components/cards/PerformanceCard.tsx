@@ -1,3 +1,4 @@
+import { useState, type ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { TrendingUp, TrendingDown, Target } from 'lucide-react';
 
@@ -20,12 +21,24 @@ interface PerformanceCardProps {
   ytd: PerfData | null;
   meta?: MetaData | null;
   metaCumulative?: boolean;   // true = Receita (acumula); false = Occ, DM (média alvo)
+  referenceMonth?: string;
   highlight?: boolean;
   delay?: number;
 }
 
-function monthElapsedRatio(): number {
+function monthElapsedRatio(referenceMonth?: string): number {
   const now = new Date();
+  const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  if (referenceMonth) {
+    const [year, month] = referenceMonth.split('-').map(Number);
+    if (Number.isFinite(year) && Number.isFinite(month) && month >= 1 && month <= 12) {
+      const selectedMonthStart = new Date(year, month - 1, 1);
+      if (selectedMonthStart < currentMonthStart) return 1;
+      if (selectedMonthStart > currentMonthStart) return 0;
+    }
+  }
+
   return now.getDate() / new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
 }
 
@@ -34,9 +47,76 @@ function pctDelta(current: number, prev: number): number {
   return ((current - prev) / Math.abs(prev)) * 100;
 }
 
+function fmtPct(value: number): string {
+  return Math.round(value).toLocaleString('pt-BR');
+}
+
+function yoyTooltipText(metric: string, value: number) {
+  if (Math.abs(value) < 0.5) return `${metric} estável vs mesmo mês do ano anterior.`;
+
+  const direction = value > 0 ? 'maior' : 'menor';
+  return `${metric} ${Math.abs(Math.round(value)).toLocaleString('pt-BR')}% ${direction} vs mesmo mês do ano anterior.`;
+}
+
+function VariationTooltip({ text, children }: { text: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div
+      aria-label={text}
+      style={{ position: 'relative', display: 'inline-flex' }}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+    >
+      {children}
+      {open && (
+        <span
+          role="tooltip"
+          style={{
+            position: 'absolute',
+            left: '50%',
+            bottom: 'calc(100% + 7px)',
+            transform: 'translateX(-50%)',
+            zIndex: 30,
+            width: 'max-content',
+            maxWidth: 190,
+            whiteSpace: 'normal',
+            textAlign: 'center',
+            padding: '6px 8px',
+            borderRadius: 6,
+            background: 'var(--text)',
+            color: 'var(--surface)',
+            boxShadow: '0 8px 20px rgba(13, 27, 62, 0.18)',
+            fontFamily: 'var(--font, inherit)',
+            fontSize: 10.5,
+            fontWeight: 700,
+            lineHeight: 1.25,
+            pointerEvents: 'none',
+          }}
+        >
+          {text}
+          <span
+            style={{
+              position: 'absolute',
+              left: '50%',
+              top: '100%',
+              transform: 'translateX(-50%)',
+              width: 0,
+              height: 0,
+              borderLeft: '5px solid transparent',
+              borderRight: '5px solid transparent',
+              borderTop: '5px solid var(--text)',
+            }}
+          />
+        </span>
+      )}
+    </div>
+  );
+}
+
 // ─── vs Ano Ant. column ───────────────────────────────────────────────
 
-function YoyColumn({ prevData, currentValue }: { prevData: PerfData | null; currentValue: number }) {
+function YoyColumn({ label, prevData, currentValue }: { label: string; prevData: PerfData | null; currentValue: number }) {
   const hasData = prevData && prevData.value !== 0;
   return (
     <div>
@@ -49,12 +129,14 @@ function YoyColumn({ prevData, currentValue }: { prevData: PerfData | null; curr
         const Icon = isPos ? TrendingUp : TrendingDown;
         return (
           <>
-            <div className="flex items-center gap-1" style={{ marginBottom: 3 }}>
-              <Icon size={11} style={{ color: isPos ? 'var(--green)' : 'var(--red)', flexShrink: 0 }} />
-              <span style={{ fontSize: '12.5px', fontWeight: 700, color: isPos ? 'var(--green)' : 'var(--red)' }}>
-                {isPos ? '+' : ''}{pct.toFixed(1)}%
-              </span>
-            </div>
+            <VariationTooltip text={yoyTooltipText(label, pct)}>
+              <div className="flex items-center gap-1" style={{ marginBottom: 3 }}>
+                <Icon size={11} style={{ color: isPos ? 'var(--green)' : 'var(--red)', flexShrink: 0 }} />
+                <span style={{ fontSize: '12.5px', fontWeight: 700, color: isPos ? 'var(--green)' : 'var(--red)' }}>
+                  {isPos ? '+' : ''}{fmtPct(pct)}%
+                </span>
+              </div>
+            </VariationTooltip>
             <div style={{ fontSize: '10.5px', color: 'var(--text-m)', fontFamily: 'var(--mono)' }}>
               {prevData.formatted}
             </div>
@@ -91,10 +173,10 @@ function YtdColumn({ data }: { data: PerfData | null }) {
 // ─── Meta strip ──────────────────────────────────────────────────────
 
 function MetaStrip({
-  meta, currentValue, isCumulative,
-}: { meta: MetaData; currentValue: number; isCumulative: boolean }) {
+  meta, currentValue, isCumulative, referenceMonth,
+}: { meta: MetaData; currentValue: number; isCumulative: boolean; referenceMonth?: string }) {
   const pct     = meta.value > 0 ? (currentValue / meta.value) * 100 : 0;
-  const elapsed = monthElapsedRatio() * 100;
+  const elapsed = monthElapsedRatio(referenceMonth) * 100;
   const exceeded = currentValue > meta.value;
 
   // For cumulative (Receita): pace against time elapsed
@@ -142,14 +224,14 @@ function MetaStrip({
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <Target size={9} style={{ color, flexShrink: 0 }} />
           <span style={{ fontSize: 10, fontWeight: 700, color }}>
-            {pct.toFixed(1)}%
+            {fmtPct(pct)}%
           </span>
           <span style={{ fontSize: 10, color: 'var(--text-m)', fontWeight: 500 }}>
             {exceeded ? '· superou' : '· da meta'}
           </span>
         </div>
         <span style={{ fontSize: 10, fontWeight: 600, fontFamily: 'var(--mono)', color: 'var(--text-m)' }}>
-          {meta.formatted}
+          Meta {meta.formatted}
         </span>
       </div>
     </div>
@@ -160,7 +242,7 @@ function MetaStrip({
 
 export default function PerformanceCard({
   title, icon: Icon, currentValue, currentFormatted,
-  prevYear, ytd, meta, metaCumulative = false, highlight = false, delay = 0,
+  prevYear, ytd, meta, metaCumulative = false, referenceMonth, highlight = false, delay = 0,
 }: PerformanceCardProps) {
   return (
     <div
@@ -192,12 +274,17 @@ export default function PerformanceCard({
 
       {/* Meta strip */}
       {meta && meta.value > 0 && (
-        <MetaStrip meta={meta} currentValue={currentValue} isCumulative={metaCumulative} />
+        <MetaStrip
+          meta={meta}
+          currentValue={currentValue}
+          isCumulative={metaCumulative}
+          referenceMonth={referenceMonth}
+        />
       )}
 
       {/* Comparisons */}
       <div className="grid grid-cols-2 gap-3" style={{ borderTop: '1px solid var(--border-l)', paddingTop: 12 }}>
-        <YoyColumn prevData={prevYear} currentValue={currentValue} />
+        <YoyColumn label={title} prevData={prevYear} currentValue={currentValue} />
         <YtdColumn data={ytd} />
       </div>
     </div>

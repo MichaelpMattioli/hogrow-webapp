@@ -33,7 +33,7 @@ export default function Navbar({ breadcrumbName }: NavbarProps) {
 
   return (
     <header
-      className="flex items-center justify-between sticky top-0 z-50"
+      className="navbar-shell flex items-center justify-between sticky top-0 z-50"
       style={{
         padding: '0 28px',
         height: 56,
@@ -42,18 +42,46 @@ export default function Navbar({ breadcrumbName }: NavbarProps) {
         boxShadow: 'var(--sh)',
       }}
     >
-      <div className="flex items-center gap-6">
+      <style>{`
+        @media (max-width: 700px) {
+          .navbar-shell {
+            padding: 0 12px !important;
+          }
+
+          .navbar-left {
+            gap: 10px !important;
+            min-width: 0;
+          }
+
+          .navbar-tabs button {
+            padding: 8px 9px !important;
+          }
+
+          .navbar-tab-label,
+          .navbar-user {
+            display: none !important;
+          }
+        }
+      `}</style>
+
+      <div className="navbar-left flex items-center gap-6">
         {/* Brand */}
-        <div className="flex items-center cursor-pointer" onClick={() => navigate('/')}>
+        <button
+          type="button"
+          aria-label="Ir para Home"
+          className="flex items-center cursor-pointer"
+          style={{ border: 'none', background: 'transparent', padding: 0 }}
+          onClick={() => navigate('/')}
+        >
           <img
             src="/logo-hogrow-navy.svg"
             alt="HoGrow"
             style={{ height: 28, width: 'auto' }}
           />
-        </div>
+        </button>
 
         {/* Tabs or Breadcrumb */}
-        <div className="flex items-center gap-0.5">
+        <div className="navbar-tabs flex items-center gap-0.5">
           {!isDetail && tabs.map((t) => {
             const Icon = t.icon;
             // active if exact match, or if current path starts with tab id (for nested routes)
@@ -72,9 +100,11 @@ export default function Navbar({ breadcrumbName }: NavbarProps) {
                   marginBottom: -1,
                 }}
                 onClick={() => navigate(t.id)}
+                aria-label={t.label}
+                title={t.label}
               >
                 <Icon size={16} />
-                {t.label}
+                <span className="navbar-tab-label">{t.label}</span>
               </button>
             );
           })}
@@ -137,6 +167,7 @@ export default function Navbar({ breadcrumbName }: NavbarProps) {
         )}
 
         <button
+          aria-label="Notificações"
           className="relative flex items-center justify-center rounded-full border transition-all duration-150 hover:border-[var(--accent)] hover:text-[var(--accent)]"
           style={{
             width: 34,
@@ -159,7 +190,7 @@ export default function Navbar({ breadcrumbName }: NavbarProps) {
           />
         </button>
         <div
-          className="flex items-center justify-center rounded-full text-[11px] font-semibold text-white"
+          className="navbar-user flex items-center justify-center rounded-full text-[11px] font-semibold text-white"
           style={{
             width: 34,
             height: 34,

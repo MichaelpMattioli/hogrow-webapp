@@ -10,6 +10,7 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { usePickupMensalKpis, type PickupMensalKpi } from '@/hooks/useSupabase';
+import type { PickupRow } from '@/data/types';
 
 const MES_PT = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
@@ -28,12 +29,6 @@ const TONES: Record<Tone, { bg: string; border: string; color: string }> = {
 function fmtBRL(value: number) {
   const sign = value < 0 ? '-' : '';
   const abs = Math.abs(value);
-  if (abs >= 1_000_000) {
-    return `${sign}R$ ${(abs / 1_000_000).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}M`;
-  }
-  if (abs >= 1_000) {
-    return `${sign}R$ ${Math.round(abs / 1_000).toLocaleString('pt-BR')}k`;
-  }
   return `${sign}R$ ${Math.round(abs).toLocaleString('pt-BR')}`;
 }
 
@@ -54,12 +49,12 @@ function fmtSignedNum(value: number | null) {
 
 function fmtPct(value: number | null) {
   if (value == null) return '--';
-  return `${value.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+  return `${value.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}%`;
 }
 
 function fmtPp(value: number | null) {
   if (value == null) return '--';
-  return `${value > 0 ? '+' : ''}${value.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}pp`;
+  return `${value > 0 ? '+' : ''}${value.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}pp`;
 }
 
 function deltaTone(value: number | null): Tone {
@@ -169,31 +164,69 @@ interface MonthRow {
   mes: number;
   label: string;
   data: PickupMensalKpi | null;
+  alteracoesDiarias: number | null;
 }
 
 interface Props {
   hotelId: number;
+  pickupRows?: PickupRow[];
 }
 
-export default function PickupMensalTable({ hotelId }: Props) {
+function hasDailyPickupChange(row: PickupRow) {
+  return row.data_extracao_ant !== null && (
+    row.pu_tt_uh !== 0 ||
+    parseFloat(row.pu_rec_hosp) !== 0 ||
+    parseFloat(row.pu_dm_tt) !== 0 ||
+    parseFloat(row.pu_occ_tt) !== 0 ||
+    parseFloat(row.pu_revpar_tt) !== 0
+  );
+}
+
+export default function PickupMensalTable({ hotelId, pickupRows }: Props) {
   const [ano, setAno] = useState(new Date().getFullYear());
   const { rows, loading, error } = usePickupMensalKpis(hotelId, ano);
 
   const rowsByMes = useMemo(() => new Map(rows.map(r => [r.mes, r])), [rows]);
+  const dailyChangesByMonth = useMemo(() => {
+    if (!pickupRows) return null;
+
+    const counts = new Map<string, number>();
+    for (const row of pickupRows) {
+      const extractionMonth = row.data_extracao.slice(0, 7);
+      const referenceMonth = row.data_referencia.slice(0, 7);
+      if (extractionMonth !== referenceMonth || !hasDailyPickupChange(row)) continue;
+      counts.set(referenceMonth, (counts.get(referenceMonth) ?? 0) + 1);
+    }
+    return counts;
+  }, [pickupRows]);
+
   const monthRows = useMemo<MonthRow[]>(() => (
-    MES_PT.map((label, idx) => ({
-      mes: idx + 1,
-      label,
-      data: rowsByMes.get(idx + 1) ?? null,
-    }))
-  ), [rowsByMes]);
+    MES_PT.map((label, idx) => {
+      const mes = idx + 1;
+      const data = rowsByMes.get(mes) ?? null;
+      const mesAno = data?.mesAno ?? `${ano}-${String(mes).padStart(2, '0')}`;
+      const dailyChangeCount = dailyChangesByMonth?.get(mesAno);
+      const alteracoesDiarias = data == null
+        ? null
+        : dailyChangesByMonth
+          ? dailyChangeCount ?? 0
+          : data.diasComAlteracao;
+
+      return {
+        mes,
+        label,
+        data,
+        alteracoesDiarias,
+      };
+    })
+  ), [ano, dailyChangesByMonth, rowsByMes]);
 
   const totals = useMemo(() => ({
     pickupReceita: rows.reduce((sum, row) => sum + row.pickupReceita, 0),
     pickupUhs: rows.reduce((sum, row) => sum + row.pickupUhs, 0),
-    alteracoes: rows.reduce((sum, row) => sum + row.diasComAlteracao, 0),
+    alteracoes: monthRows.reduce((sum, row) => sum + (row.alteracoesDiarias ?? 0), 0),
     receitaReal: rows.reduce((sum, row) => sum + row.receitaReal, 0),
-  }), [rows]);
+  }), [monthRows, rows]);
 
   const hotelNome = rows[0]?.hotelNome;
 
@@ -269,7 +302,7 @@ export default function PickupMensalTable({ hotelId }: Props) {
             icon={<BedDouble size={14} />}
           />
           <SummaryMetric
-            label="Dias alterados"
+            label="Alterações diárias"
             value={fmtNum(totals.alteracoes)}
             tone={totals.alteracoes > 0 ? 'change' : 'muted'}
             icon={<CalendarRange size={14} />}
@@ -309,15 +342,20 @@ export default function PickupMensalTable({ hotelId }: Props) {
                 <th style={{ ...th, textAlign: 'right' }}>Pickup R$</th>
                 <th style={{ ...th, textAlign: 'right' }}>Pickup UH</th>
                 <th style={{ ...th, textAlign: 'right' }}>Occ</th>
-                <th style={{ ...th, textAlign: 'center' }}>Alt.</th>
+                <th
+                  style={{ ...th, textAlign: 'center' }}
+                  title="Linhas do pick-up diário com alteração, considerando extração e referência dentro do mesmo mês."
+                >
+                  Alt. diárias
+                </th>
               </tr>
             </thead>
             <tbody>
-              {monthRows.map(({ mes, label, data }) => {
+              {monthRows.map(({ mes, label, data, alteracoesDiarias }) => {
                 const hasData = data != null;
                 const metaTone: Tone = data?.receitaMeta == null ? 'muted' : 'neutral';
                 const realTone: Tone = !hasData ? 'muted' : data.receitaReal > 0 ? 'positive' : 'muted';
-                const changeTone: Tone = data && data.diasComAlteracao > 0 ? 'change' : 'muted';
+                const changeTone: Tone = alteracoesDiarias != null && alteracoesDiarias > 0 ? 'change' : 'muted';
 
                 return (
                   <tr key={mes}>
@@ -362,7 +400,7 @@ export default function PickupMensalTable({ hotelId }: Props) {
                       {fmtPp(data?.pickupOccMediaPp ?? null)}
                     </td>
                     <td style={cellStyle(changeTone, 'center')}>
-                      {data ? data.diasComAlteracao : '--'}
+                      {alteracoesDiarias != null ? alteracoesDiarias : '--'}
                     </td>
                   </tr>
                 );

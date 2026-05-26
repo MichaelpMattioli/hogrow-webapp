@@ -528,6 +528,15 @@ export interface PickupSummary {
   pu7dReceita: number;
 }
 
+export interface TodayPickupAlert {
+  hotelId: number;
+  dataExtracao: string;
+  alteracoes: number;
+  pickupUhs: number;
+  pickupReceita: number;
+  referencias: string[];
+}
+
 export function usePickupSummary() {
   const [summaries, setSummaries] = useState<PickupSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -581,6 +590,194 @@ export function usePickupSummary() {
   }, []);
 
   return { summaries, loading };
+}
+
+function hasPickupChange(row: Record<string, unknown>): boolean {
+  return (
+    num(row.pu_tt_uh) !== 0 ||
+    num(row.pu_rec_hosp) !== 0 ||
+    num(row.pu_dm_tt) !== 0 ||
+    num(row.pu_occ_tt) !== 0 ||
+    num(row.pu_revpar_tt) !== 0
+  );
+}
+
+export function useTodayPickupAlerts() {
+  const [alerts, setAlerts] = useState<TodayPickupAlert[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      setError(null);
+      try {
+        const clientIds = await fetchClientHotelIds();
+        if (clientIds.length === 0) {
+          setAlerts([]);
+          return;
+        }
+
+        const today = localDateKey();
+        const { data, error: err } = await supabase
+          .from('vw_pickup_diario')
+          .select('hotel_id,data_extracao,data_extracao_ant,data_referencia,pu_tt_uh,pu_rec_hosp,pu_dm_tt,pu_occ_tt,pu_revpar_tt')
+          .in('hotel_id', clientIds)
+          .eq('data_extracao', today)
+          .order('hotel_id', { ascending: true })
+          .order('data_referencia', { ascending: true });
+
+        if (err) throw err;
+
+        const byHotel = new Map<number, {
+          dataExtracao: string;
+          alteracoes: number;
+          pickupUhs: number;
+          pickupReceita: number;
+          referencias: Set<string>;
+        }>();
+
+        for (const row of (data ?? []) as Record<string, unknown>[]) {
+          if (row.data_extracao_ant == null) continue;
+          if (!isPickupExtractionAllowed(row.data_extracao as string | null, row.data_referencia as string | null)) continue;
+          if (!hasPickupChange(row)) continue;
+
+          const hotelId = num(row.hotel_id);
+          if (!hotelId) continue;
+
+          const acc = byHotel.get(hotelId) ?? {
+            dataExtracao: String(row.data_extracao ?? today),
+            alteracoes: 0,
+            pickupUhs: 0,
+            pickupReceita: 0,
+            referencias: new Set<string>(),
+          };
+
+          acc.alteracoes += 1;
+          acc.pickupUhs += num(row.pu_tt_uh);
+          acc.pickupReceita += num(row.pu_rec_hosp);
+          if (row.data_referencia) acc.referencias.add(String(row.data_referencia));
+          byHotel.set(hotelId, acc);
+        }
+
+        setAlerts(
+          [...byHotel.entries()]
+            .map(([hotelId, alert]) => ({
+              hotelId,
+              dataExtracao: alert.dataExtracao,
+              alteracoes: alert.alteracoes,
+              pickupUhs: alert.pickupUhs,
+              pickupReceita: alert.pickupReceita,
+              referencias: [...alert.referencias].sort(),
+            }))
+            .sort((a, b) => b.alteracoes - a.alteracoes || Math.abs(b.pickupReceita) - Math.abs(a.pickupReceita))
+        );
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Erro ao carregar alertas de pick-up');
+        setAlerts([]);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    load();
+  }, []);
+
+  return { alerts, loading, error };
+}
+
+export interface HomePageRow {
+  hotelId: number;
+  hotelNome: string;
+  cidade: string | null;
+  estado: string | null;
+  totalUhs: number;
+  receitaPeriodo: number;
+  occAtual: number;
+  revparAtual: number;
+  dmAtual: number | null;
+  receitaMesAtual: number;
+  metaId: number | null;
+  receitaMeta: number | null;
+  occMeta: number | null;
+  dmMeta: number | null;
+  receitaMetaPct: number | null;
+  occMetaPct: number | null;
+  dmMetaPct: number | null;
+  goalScore: number | null;
+  pickupDataExtracao: string | null;
+  pickupAlteracoes: number;
+  pickupUhs: number;
+  pickupReceita: number;
+  pickupReferencias: string[];
+}
+
+function dateArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map(item => String(item)).filter(Boolean);
+}
+
+function mapHomePageRow(row: Record<string, unknown>): HomePageRow {
+  return {
+    hotelId: num(row.hotel_id),
+    hotelNome: (row.hotel_nome as string) ?? '',
+    cidade: (row.cidade as string | null) ?? null,
+    estado: (row.estado as string | null) ?? null,
+    totalUhs: num(row.total_uhs),
+    receitaPeriodo: num(row.receita_periodo),
+    occAtual: num(row.occ_atual),
+    revparAtual: num(row.revpar_atual),
+    dmAtual: nullableNum(row.dm_atual),
+    receitaMesAtual: num(row.receita_mes_atual),
+    metaId: nullableNum(row.meta_id),
+    receitaMeta: nullableNum(row.receita_meta),
+    occMeta: nullableNum(row.occ_meta),
+    dmMeta: nullableNum(row.dm_meta),
+    receitaMetaPct: nullableNum(row.receita_meta_pct),
+    occMetaPct: nullableNum(row.occ_meta_pct),
+    dmMetaPct: nullableNum(row.dm_meta_pct),
+    goalScore: nullableNum(row.goal_score),
+    pickupDataExtracao: (row.pickup_data_extracao as string | null) ?? null,
+    pickupAlteracoes: num(row.pickup_alteracoes),
+    pickupUhs: num(row.pickup_uhs),
+    pickupReceita: num(row.pickup_receita),
+    pickupReferencias: dateArray(row.pickup_referencias),
+  };
+}
+
+export function useHomePage(mesAno?: string, dataExtracao?: string) {
+  const [rows, setRows] = useState<HomePageRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      setError(null);
+
+      const date = dataExtracao || localDateKey();
+      const month = mesAno || date.slice(0, 7);
+
+      try {
+        const { data, error: err } = await supabase.rpc('rpc_home_page', {
+          p_mes_ano: month,
+          p_data_extracao: date,
+        });
+
+        if (err) throw err;
+        setRows(((data ?? []) as Record<string, unknown>[]).map(mapHomePageRow));
+      } catch (err: unknown) {
+        setRows([]);
+        setError(err instanceof Error ? err.message : 'Erro ao carregar Home');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    load();
+  }, [dataExtracao, mesAno]);
+
+  return { rows, loading, error };
 }
 
 // Monthly pickup KPIs for the Pickup > Mensal tab.

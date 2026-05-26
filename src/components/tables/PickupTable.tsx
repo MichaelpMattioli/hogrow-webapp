@@ -4,14 +4,8 @@ import type { BookingRate, PickupRow } from '@/data/types';
 
 // ─── Formatting helpers ───────────────────────────────────────────────
 
-function fmtR$(v: number)  { return v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 function fmtShopper(v: number) { return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }); }
-function fmtPct(v: number) { return v.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }); }
 function deltaColor(v: number) { return v > 0 ? 'var(--green)' : v < 0 ? 'var(--red)' : 'var(--text-m)'; }
-function fmtDelta(v: number, prefix = '', suffix = '') {
-  if (v === 0) return '—';
-  return `${v > 0 ? '+' : ''}${prefix}${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${suffix}`;
-}
 function fmtDeltaInt(v: number) { return v === 0 ? '—' : `${v > 0 ? '+' : ''}${v}`; }
 function fmtWholeAware(v: number, whole: boolean, decimals = 2) {
   return v.toLocaleString('pt-BR', {
@@ -645,11 +639,11 @@ export default function PickupTable({
           <thead className="sticky top-0" style={{ background:'var(--surface)' }}>
             <tr>
               <th style={thSnap}>DATA REFERÊNCIA</th>
-              <th style={thPu}>PU TT UH</th>
-              <th style={thPu}>PU REC HOSP</th>
-              <th style={thPu}>PU DM TT</th>
-              <th style={thPu}>PU OCC%</th>
-              <th style={thPu}>PU REVPAR</th>
+              <th style={thPu}>TT UH</th>
+              <th style={thPu}>REC HOSP</th>
+              <th style={thPu}>DM TT</th>
+              <th style={thPu}>OCC%</th>
+              <th style={thPu}>REVPAR</th>
               <th style={thSnap}>TT UHS OCUP</th>
               <th style={thSnap}>REC HOSP</th>
               <th style={thSnap}>DM C/C TT</th>

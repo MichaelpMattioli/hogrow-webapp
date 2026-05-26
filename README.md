@@ -25,6 +25,7 @@ Acesse: http://localhost:5173
 
 - Detalhe do cliente usa `public.vw_hotel_receita_diaria_atual`, que mantem somente a ultima `data_extracao` por `hotel_id + data_referencia`.
 - Boletim de ocupacao nao e mais populado manualmente no webapp; a posicao atual vem de `public.vw_boletim_ocupacao_atual`, derivada de `hotel_receita_diaria`.
+- Mapa de RPCs planejadas por tela: [`docs/supabase-rpcs.md`](docs/supabase-rpcs.md).
 
 ## Build de Produção
 

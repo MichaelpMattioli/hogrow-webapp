@@ -1,11 +1,10 @@
 import React, { useState } from 'react';
-import { CalendarRange, List, TrendingUp } from 'lucide-react';
+import { CalendarRange, List } from 'lucide-react';
 import type { BookingRate, PickupRow } from '@/data/types';
 import PickupTable from './PickupTable';
-import PickupAcumuladoTable from './PickupAcumuladoTable';
 import PickupMensalTable from './PickupMensalTable';
 
-type PickupView = 'diario' | 'acumulado' | 'mensal';
+type PickupView = 'diario' | 'mensal';
 
 interface Props {
   hotelId: number;
@@ -41,12 +40,9 @@ export default function PickupSection({
     color: active ? 'var(--accent)' : 'var(--text-m)',
   });
 
-  const description =
-    view === 'diario'
-      ? 'referência mensal e extração'
-      : view === 'acumulado'
-        ? 'evolução acumulada por dia do mês'
-        : 'KPIs mensais do ano';
+  const description = view === 'diario'
+    ? 'referência mensal e extração'
+    : 'KPIs mensais do ano';
 
   return (
     <div>
@@ -74,10 +70,6 @@ export default function PickupSection({
             <CalendarRange size={13} />
             Mensal
           </button>
-          <button style={toggleBtn(view === 'acumulado')} onClick={() => setView('acumulado')}>
-            <TrendingUp size={13} />
-            Acumulado
-          </button>
         </div>
       </div>
 
@@ -89,10 +81,8 @@ export default function PickupSection({
           onReferenceChange={onReferenceChange}
           shopperRates={shopperRates}
         />
-      ) : view === 'acumulado' ? (
-        <PickupAcumuladoTable hotelId={hotelId} />
       ) : (
-        <PickupMensalTable hotelId={hotelId} />
+        <PickupMensalTable hotelId={hotelId} pickupRows={pickupRows} />
       )}
     </div>
   );

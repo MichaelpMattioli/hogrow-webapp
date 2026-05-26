@@ -1,10 +1,12 @@
+import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useHotels } from '@/hooks/useSupabase';
-import { aggregatePortfolio } from '@/data/transforms';
+import { useHomePage, type HomePageRow, type TodayPickupAlert } from '@/hooks/useSupabase';
+import { aggregatePortfolio, deriveStatus } from '@/data/transforms';
+import type { HotelMeta, HotelSummary } from '@/data/types';
 import { Loader2, ArrowRight, TrendingUp, Hotel, BarChart2, Users } from 'lucide-react';
 import AlertCard from '@/components/cards/AlertCard';
-import TopPerformerCard from '@/components/cards/TopPerformerCard';
-import type { HotelSummary } from '@/data/types';
+import GoalAchievementCard from '@/components/cards/GoalAchievementCard';
+import { localDateKey } from '@/lib/utils';
 
 const fmtRec = (v: number) => {
   if (v >= 1_000_000) return `R$ ${(v / 1_000_000).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}M`;
@@ -43,12 +45,95 @@ function StatTile({ icon, label, value }: StatTileProps) {
   );
 }
 
+function hasAnyMeta(row: HomePageRow) {
+  return row.receitaMeta != null || row.occMeta != null || row.dmMeta != null;
+}
+
+function toHotelSummary(row: HomePageRow): HotelSummary {
+  return {
+    id: row.hotelId,
+    name: row.hotelNome,
+    razaoSocial: row.hotelNome,
+    city: row.cidade ?? '--',
+    state: row.estado ?? '--',
+    uhs: row.totalUhs,
+    leitos: null,
+    ativo: true,
+    avgOcc: row.occAtual,
+    avgRevpar: row.revparAtual,
+    avgDm: row.dmAtual,
+    totalReceita: row.receitaPeriodo,
+    totalRecDiarias: 0,
+    totalRecAb: 0,
+    diasComDados: 0,
+    receitaMesAnterior: 0,
+    receitaMesAtual: row.receitaMesAtual,
+    receitaMesQueVem: 0,
+    occMesAnterior: 0,
+    occMesAtual: row.occAtual,
+    occMesQueVem: 0,
+    recDiariasMesAtual: 0,
+    ocupadosMesAtual: 0,
+    cortesiaMesAtual: 0,
+    hospedesMesAtual: 0,
+    diasMesAtual: 0,
+    recDiariasMesAnterior: 0,
+    ocupadosMesAnterior: 0,
+    receitaAnoAnterior: 0,
+    recDiariasAnoAnterior: 0,
+    occAnoAnterior: 0,
+    ocupadosAnoAnterior: 0,
+    receitaYTD: row.receitaPeriodo,
+    ocupadosYTD: 0,
+    hospedesYTD: 0,
+    occAvgYTD: row.occAtual,
+    dmYTD: row.dmAtual,
+    latestDate: '--',
+    latestExtracao: '--',
+    latestOcc: row.occAtual,
+    latestRevpar: row.revparAtual,
+    latestDm: row.dmAtual,
+    latestRecTotal: row.receitaMesAtual,
+    latestOcupados: 0,
+    status: deriveStatus(row.occAtual),
+  };
+}
+
 export default function Home() {
   const navigate = useNavigate();
-  const { hotels, loading, error } = useHotels();
-  const portfolio = aggregatePortfolio(hotels);
+  const currentDate = localDateKey();
+  const currentMonth = currentDate.slice(0, 7);
+  const { rows, loading, error } = useHomePage(currentMonth, currentDate);
 
-  const handleSelect = (hotel: HotelSummary) => navigate(`/clientes/${hotel.id}`);
+  const hotels = useMemo(() => rows.map(toHotelSummary), [rows]);
+  const metas = useMemo<HotelMeta[]>(() => (
+    rows
+      .filter(hasAnyMeta)
+      .map(row => ({
+        id: row.metaId ?? undefined,
+        hotelId: row.hotelId,
+        mesAno: currentMonth,
+        receitaMeta: row.receitaMeta,
+        occMeta: row.occMeta,
+        dmMeta: row.dmMeta,
+        revparMeta: null,
+      }))
+  ), [currentMonth, rows]);
+  const pickupAlerts = useMemo<TodayPickupAlert[]>(() => (
+    rows
+      .filter(row => row.pickupAlteracoes > 0)
+      .map(row => ({
+        hotelId: row.hotelId,
+        dataExtracao: row.pickupDataExtracao ?? currentDate,
+        alteracoes: row.pickupAlteracoes,
+        pickupUhs: row.pickupUhs,
+        pickupReceita: row.pickupReceita,
+        referencias: row.pickupReferencias,
+      }))
+  ), [currentDate, rows]);
+  const portfolio = useMemo(() => aggregatePortfolio(hotels), [hotels]);
+
+  const handleSelect = (hotelId: number) => navigate(`/clientes/${hotelId}`);
 
   if (loading) {
     return (
@@ -127,9 +212,21 @@ export default function Home() {
       </div>
 
       {/* ── Alertas + Top performers ── */}
-      <div className="grid grid-cols-2 gap-5">
-        <AlertCard       hotels={portfolio.alerts}    onSelect={handleSelect} />
-        <TopPerformerCard hotels={portfolio.topRevpar} onSelect={handleSelect} />
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+        <AlertCard
+          alerts={pickupAlerts}
+          hotels={hotels}
+          loading={false}
+          error={null}
+          onSelect={handleSelect}
+        />
+        <GoalAchievementCard
+          hotels={hotels}
+          metas={metas}
+          referenceMonth={currentMonth}
+          loading={false}
+          onSelect={handleSelect}
+        />
       </div>
 
     </div>
