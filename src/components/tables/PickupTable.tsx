@@ -1,6 +1,7 @@
 import { useMemo, useState, useRef, useEffect } from 'react';
 import { CalendarDays, ChevronLeft, ChevronRight, Filter, Hash } from 'lucide-react';
 import type { BookingRate, PickupRow } from '@/data/types';
+import { Skeleton } from '@/components/ui/Skeleton';
 
 // ─── Formatting helpers ───────────────────────────────────────────────
 
@@ -311,6 +312,22 @@ type ShopperPaxPrices = Record<1 | 2 | 3 | 4, number | null>;
 
 const emptyShopperPrices = (): ShopperPaxPrices => ({ 1: null, 2: null, 3: null, 4: null });
 
+function PickupTableSkeletonRows() {
+  return (
+    <>
+      {Array.from({ length: 12 }, (_, row) => (
+        <tr key={row}>
+          {Array.from({ length: 18 }, (_, col) => (
+            <td key={col} style={cell()}>
+              <Skeleton height={14} radius={4} />
+            </td>
+          ))}
+        </tr>
+      ))}
+    </>
+  );
+}
+
 export default function PickupTable({
   data,
   selectedMonths,
@@ -369,10 +386,13 @@ export default function PickupTable({
 
   // Default to most recent extraction
   const [selectedExtracao, setSelectedExtracao] = useState<string | null>(null);
+  const [settledExtracao, setSettledExtracao] = useState<string | null>(null);
+  const [isExtracaoLoading, setIsExtracaoLoading] = useState(false);
   const referenceKey = referenceMonths.join('|');
 
   useEffect(() => {
     setSelectedExtracao(null);
+    setSettledExtracao(null);
   }, [referenceKey]);
 
   // Filter: only rows with changes
@@ -383,6 +403,18 @@ export default function PickupTable({
   const activeExtracao = selectedExtracao && calendarExtracoes.includes(selectedExtracao)
     ? selectedExtracao
     : defaultExtracao;
+
+  useEffect(() => {
+    if (activeExtracao === settledExtracao) return;
+
+    setIsExtracaoLoading(true);
+    const timer = window.setTimeout(() => {
+      setSettledExtracao(activeExtracao);
+      setIsExtracaoLoading(false);
+    }, 260);
+
+    return () => window.clearTimeout(timer);
+  }, [activeExtracao, settledExtracao]);
 
   const activeExtracaoIndex = activeExtracao ? calendarExtracoes.indexOf(activeExtracao) : -1;
   const prevExtracao = activeExtracaoIndex > 0 ? calendarExtracoes[activeExtracaoIndex - 1] : null;
@@ -429,6 +461,7 @@ export default function PickupTable({
     onReferenceChange([month]);
     setSelectedExtracao(null);
   };
+  const selectExtracao = (date: string) => setSelectedExtracao(date);
 
   return (
     <div className="card-in" style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:'var(--r)', padding:'20px', animationDelay:'0.2s' }}>
@@ -437,10 +470,16 @@ export default function PickupTable({
         <div style={{ minWidth: 180 }}>
           <h3 className="text-sm font-semibold" style={{ letterSpacing:'-0.2px' }}>Pick-Up Diário</h3>
           <p className="text-[11.5px] mt-0.5" style={{ color:'var(--text-m)' }}>
-            {filtered.length} datas na tabela
-            {hasPickup
-              ? ` · comparação com extração anterior`
-              : ' · sem extração anterior (sem pick-up)'}
+            {isExtracaoLoading ? (
+              <Skeleton width={190} height={10} />
+            ) : (
+              <>
+                {filtered.length} datas na tabela
+                {hasPickup
+                  ? ` · comparação com extração anterior`
+                  : ' · sem extração anterior (sem pick-up)'}
+              </>
+            )}
           </p>
         </div>
 
@@ -560,7 +599,7 @@ export default function PickupTable({
           {calendarExtracoes.length > 0 ? (
             <div style={{ display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
               <button
-                onClick={() => prevExtracao && setSelectedExtracao(prevExtracao)}
+                onClick={() => prevExtracao && selectExtracao(prevExtracao)}
                 disabled={!prevExtracao}
                 title="Extração anterior"
                 aria-label="Extração anterior"
@@ -579,11 +618,11 @@ export default function PickupTable({
                 available={calendarExtracoes}
                 changed={changedExtracoes}
                 selected={activeExtracao}
-                onSelect={setSelectedExtracao}
+                onSelect={selectExtracao}
               />
 
               <button
-                onClick={() => nextExtracao && setSelectedExtracao(nextExtracao)}
+                onClick={() => nextExtracao && selectExtracao(nextExtracao)}
                 disabled={!nextExtracao}
                 title="Próxima extração"
                 aria-label="Próxima extração"
@@ -655,7 +694,9 @@ export default function PickupTable({
             </tr>
           </thead>
           <tbody>
-            {filtered.length === 0 ? (
+            {isExtracaoLoading ? (
+              <PickupTableSkeletonRows />
+            ) : filtered.length === 0 ? (
               <tr>
                 <td colSpan={18} style={{ padding:'24px', textAlign:'center', color:'var(--text-m)', fontSize:12 }}>
                   Nenhum dado para os filtros selecionados

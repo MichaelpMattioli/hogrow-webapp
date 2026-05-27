@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { usePickupMensalKpis, type PickupMensalKpi } from '@/hooks/useSupabase';
 import type { PickupRow } from '@/data/types';
+import { Skeleton } from '@/components/ui/Skeleton';
 
 const MES_PT = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
@@ -153,6 +154,55 @@ function SummaryMetric({
   );
 }
 
+function PickupMensalSkeleton() {
+  return (
+    <>
+      <div style={{
+        background: 'var(--bg)',
+        borderBottom: '1px solid var(--border-l)',
+        display: 'flex',
+        overflowX: 'auto',
+      }}>
+        {Array.from({ length: 4 }, (_, index) => (
+          <div
+            key={index}
+            style={{
+              minWidth: 150,
+              padding: '10px 12px',
+              borderRight: '1px solid var(--border-l)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 9,
+            }}
+          >
+            <Skeleton width={28} height={28} radius="var(--rx)" />
+            <span style={{ minWidth: 0, flex: 1 }}>
+              <Skeleton width="70%" height={9} style={{ marginBottom: 6 }} />
+              <Skeleton width="88%" height={13} />
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ overflowX: 'auto', overflowY: 'hidden', maxHeight: 520 }}>
+        <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 3, fontSize: 12, minWidth: 980 }}>
+          <tbody>
+            {Array.from({ length: 12 }, (_, row) => (
+              <tr key={row}>
+                {Array.from({ length: 10 }, (_, col) => (
+                  <td key={col} style={{ padding: '8px 10px', background: col === 0 ? 'var(--surface)' : 'var(--bg)', border: '1px solid var(--border-l)' }}>
+                    <Skeleton height={16} radius={4} />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
 function TrendIcon({ value }: { value: number | null }) {
   if (value == null || value === 0) return null;
   return value > 0
@@ -255,7 +305,7 @@ export default function PickupMensalTable({ hotelId }: Props) {
         </div>
       </div>
 
-      {rows.length > 0 && (
+      {!loading && rows.length > 0 && (
         <div style={{
           background: 'var(--bg)',
           borderBottom: '1px solid var(--border-l)',
@@ -290,9 +340,7 @@ export default function PickupMensalTable({ hotelId }: Props) {
       )}
 
       {loading ? (
-        <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-m)', fontSize: 12 }}>
-          Carregando...
-        </div>
+        <PickupMensalSkeleton />
       ) : error ? (
         <div style={{ padding: 32, textAlign: 'center', color: 'var(--red)', fontSize: 12, fontWeight: 700 }}>
           {error}

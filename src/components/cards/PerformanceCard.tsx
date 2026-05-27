@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { TrendingUp, TrendingDown, Target } from 'lucide-react';
+import { Skeleton } from '@/components/ui/Skeleton';
 
 export interface PerfData {
   value: number;
@@ -24,6 +25,7 @@ interface PerformanceCardProps {
   referenceMonth?: string;
   highlight?: boolean;
   delay?: number;
+  loading?: boolean;
 }
 
 function monthElapsedRatio(referenceMonth?: string): number {
@@ -240,9 +242,37 @@ function MetaStrip({
 
 // ─── Card ─────────────────────────────────────────────────────────────
 
+function CardValueSkeleton({ meta }: { meta: boolean }) {
+  return (
+    <>
+      <Skeleton width="68%" height={27} style={{ marginBottom: meta ? 12 : 16 }} />
+      {meta && (
+        <div style={{ marginTop: 2, marginBottom: 14 }}>
+          <Skeleton width="100%" height={5} radius={99} style={{ marginBottom: 9 }} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+            <Skeleton width={82} height={10} />
+            <Skeleton width={112} height={10} />
+          </div>
+        </div>
+      )}
+      <div className="grid grid-cols-2 gap-3" style={{ borderTop: '1px solid var(--border-l)', paddingTop: 12 }}>
+        <div>
+          <Skeleton width={70} height={9} style={{ marginBottom: 7 }} />
+          <Skeleton width={62} height={13} style={{ marginBottom: 6 }} />
+          <Skeleton width={86} height={10} />
+        </div>
+        <div>
+          <Skeleton width={66} height={9} style={{ marginBottom: 7 }} />
+          <Skeleton width={92} height={13} />
+        </div>
+      </div>
+    </>
+  );
+}
+
 export default function PerformanceCard({
   title, icon: Icon, currentValue, currentFormatted,
-  prevYear, ytd, meta, metaCumulative = false, referenceMonth, highlight = false, delay = 0,
+  prevYear, ytd, meta, metaCumulative = false, referenceMonth, highlight = false, delay = 0, loading = false,
 }: PerformanceCardProps) {
   return (
     <div
@@ -267,26 +297,32 @@ export default function PerformanceCard({
         </div>
       </div>
 
-      {/* Primary value */}
-      <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.7px', color: 'var(--text)', fontFamily: 'var(--mono)', marginBottom: meta ? 10 : 14 }}>
-        {currentFormatted}
-      </div>
+      {loading ? (
+        <CardValueSkeleton meta={Boolean(meta)} />
+      ) : (
+        <>
+          {/* Primary value */}
+          <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-0.7px', color: 'var(--text)', fontFamily: 'var(--mono)', marginBottom: meta ? 10 : 14 }}>
+            {currentFormatted}
+          </div>
 
-      {/* Meta strip */}
-      {meta && meta.value > 0 && (
-        <MetaStrip
-          meta={meta}
-          currentValue={currentValue}
-          isCumulative={metaCumulative}
-          referenceMonth={referenceMonth}
-        />
+          {/* Meta strip */}
+          {meta && meta.value > 0 && (
+            <MetaStrip
+              meta={meta}
+              currentValue={currentValue}
+              isCumulative={metaCumulative}
+              referenceMonth={referenceMonth}
+            />
+          )}
+
+          {/* Comparisons */}
+          <div className="grid grid-cols-2 gap-3" style={{ borderTop: '1px solid var(--border-l)', paddingTop: 12 }}>
+            <YoyColumn label={title} prevData={prevYear} currentValue={currentValue} />
+            <YtdColumn data={ytd} />
+          </div>
+        </>
       )}
-
-      {/* Comparisons */}
-      <div className="grid grid-cols-2 gap-3" style={{ borderTop: '1px solid var(--border-l)', paddingTop: 12 }}>
-        <YoyColumn label={title} prevData={prevYear} currentValue={currentValue} />
-        <YtdColumn data={ytd} />
-      </div>
     </div>
   );
 }

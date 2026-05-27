@@ -1,6 +1,6 @@
-import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect, type CSSProperties } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { BedDouble, DollarSign, TrendingUp, BarChart3, Loader2, ArrowLeft, MoreVertical, Pencil, Percent, Users } from 'lucide-react';
+import { BedDouble, DollarSign, TrendingUp, BarChart3, ArrowLeft, MoreVertical, Pencil, Percent, Users } from 'lucide-react';
 import {
   updateHotel,
   useClienteDetalheCards,
@@ -18,8 +18,139 @@ import PickupSection from '@/components/tables/PickupSection';
 import HotelEditForm from '@/components/forms/HotelEditForm';
 import RateCalendar from '@/components/rateshop/RateCalendar';
 import HeaderMonthReference from '@/components/ui/HeaderMonthReference';
+import { Skeleton, SkeletonText } from '@/components/ui/Skeleton';
 
 type Tab = 'dashboard' | 'editar';
+
+const skeletonPanel: CSSProperties = {
+  background: 'var(--surface)',
+  border: '1px solid var(--border)',
+  borderRadius: 'var(--r)',
+};
+
+function DetailCardSkeleton({ delay = 0 }: { delay?: number }) {
+  return (
+    <div
+      className="card-in"
+      style={{
+        ...skeletonPanel,
+        padding: 18,
+        minHeight: 154,
+        animationDelay: `${delay}ms`,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22 }}>
+        <Skeleton width={104} height={12} />
+        <Skeleton width={30} height={30} radius="var(--rx)" />
+      </div>
+      <Skeleton width="62%" height={28} style={{ marginBottom: 18 }} />
+      <SkeletonText lines={3} />
+    </div>
+  );
+}
+
+function PickupSkeletonPanel() {
+  return (
+    <div style={{ ...skeletonPanel, padding: 20 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 18 }}>
+        <div>
+          <Skeleton width={130} height={14} style={{ marginBottom: 8 }} />
+          <Skeleton width={210} height={10} />
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <Skeleton width={74} height={30} radius="var(--rx)" />
+          <Skeleton width={74} height={30} radius="var(--rx)" />
+        </div>
+      </div>
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+        gap: 18,
+        padding: '14px 0 16px',
+        borderTop: '1px solid var(--border-l)',
+        borderBottom: '1px solid var(--border-l)',
+        marginBottom: 16,
+      }}>
+        <div>
+          <Skeleton width={110} height={10} style={{ marginBottom: 10 }} />
+          <Skeleton width="70%" height={30} style={{ marginBottom: 8 }} />
+          <Skeleton width="52%" height={10} />
+        </div>
+        <div>
+          <Skeleton width={132} height={10} style={{ marginBottom: 10 }} />
+          <Skeleton width={190} height={30} style={{ marginBottom: 8 }} />
+          <Skeleton width="64%" height={10} />
+        </div>
+      </div>
+      <div style={{ display: 'grid', gap: 8 }}>
+        {Array.from({ length: 9 }, (_, row) => (
+          <div key={row} style={{ display: 'grid', gridTemplateColumns: '1.4fr repeat(6, 1fr)', gap: 8 }}>
+            {Array.from({ length: 7 }, (_, col) => (
+              <Skeleton key={col} height={18} radius={4} />
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ClienteDetalhePageSkeleton() {
+  return (
+    <div className="fade-in">
+      <Skeleton width={150} height={17} style={{ marginBottom: 20 }} />
+
+      <div
+        style={{
+          ...skeletonPanel,
+          borderLeft: '4px solid var(--border)',
+          padding: '14px 18px',
+          marginBottom: 40,
+          display: 'flex',
+          justifyContent: 'space-between',
+          gap: 18,
+          flexWrap: 'wrap',
+        }}
+      >
+        <div style={{ minWidth: 240 }}>
+          <Skeleton width={220} height={24} style={{ marginBottom: 9 }} />
+          <Skeleton width={180} height={12} />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <Skeleton width={126} height={32} radius="var(--rx)" />
+          <Skeleton width={32} height={32} radius="var(--rx)" />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-5" style={{ marginBottom: 12 }}>
+        {[0, 60, 120].map(delay => <DetailCardSkeleton key={delay} delay={delay} />)}
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-5" style={{ marginBottom: 40 }}>
+        {[180, 240, 300].map(delay => <DetailCardSkeleton key={delay} delay={delay} />)}
+      </div>
+
+      <div style={{ marginBottom: 40 }}>
+        <PickupSkeletonPanel />
+      </div>
+
+      <div style={{ ...skeletonPanel, padding: 18, minHeight: 320 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, marginBottom: 22 }}>
+          <div>
+            <Skeleton width={130} height={14} style={{ marginBottom: 8 }} />
+            <Skeleton width={220} height={10} />
+          </div>
+          <Skeleton width={150} height={32} radius="var(--rx)" />
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(40px, 1fr))', gap: 8 }}>
+          {Array.from({ length: 35 }, (_, index) => (
+            <Skeleton key={index} height={38} radius="var(--rx)" />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function ClienteDetalhe() {
   const { id } = useParams<{ id: string }>();
@@ -84,14 +215,7 @@ export default function ClienteDetalhe() {
   const pmd = (v: number | null | undefined, fmt: (n: number) => string): MetaData | null =>
     v != null && v > 0 ? { value: v, formatted: fmt(v) } : null;
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 size={24} className="animate-spin" style={{ color: 'var(--accent)' }} />
-        <span className="ml-2 text-[var(--text-m)]">Carregando detalhes...</span>
-      </div>
-    );
-  }
+  if (loading) return <ClienteDetalhePageSkeleton />;
 
   if (error || !hotel || !summary) {
     return (
@@ -108,7 +232,9 @@ export default function ClienteDetalhe() {
   const latestSnapshot = summary.latestDate !== '-'
     ? ` - ${summary.latestOcupados}/${summary.uhs} UHs`
     : ` - ${summary.uhs} UHs`;
-  const cardReferenceMonth = cards?.selectedMesAno || selectedMes;
+  const cardsValueLoading = cardsLoading || !cards || cards.selectedMesAno !== selectedMes;
+  const cardReferenceMonth = cardsValueLoading ? selectedMes : cards.selectedMesAno;
+  const loadingMeta: MetaData = { value: 1, formatted: '' };
 
   return (
     <div className="fade-in">
@@ -192,65 +318,66 @@ export default function ClienteDetalhe() {
         </>
       ) : (
         <>
-          {cardsLoading && !cards ? (
-            <div className="flex items-center justify-center" style={{ padding: '32px 0', marginBottom: 24 }}>
-              <Loader2 size={18} className="animate-spin" style={{ color: 'var(--accent)' }} />
-              <span className="ml-2 text-[12px]" style={{ color: 'var(--text-m)' }}>Carregando indicadores...</span>
-            </div>
-          ) : cardsError ? (
+          {cardsError ? (
             <div style={{ padding: 24, marginBottom: 24, textAlign: 'center', color: 'var(--red)', fontSize: 12, fontWeight: 700 }}>
               {cardsError}
             </div>
-          ) : cards && (
+          ) : (
             <>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-5" style={{ marginBottom: 12 }}>
                 <PerformanceCard
                   title="Receita" icon={BarChart3} highlight delay={0}
-                  currentValue={cards.receitaAtual} currentFormatted={fmtRec(cards.receitaAtual)}
-                  prevYear={pd(cards.receitaPrevYear, fmtRec)}
-                  ytd={pd(cards.receitaYtd, fmtRec)}
-                  meta={pmd(cards.receitaMeta, fmtRec)}
+                  currentValue={cards?.receitaAtual ?? 0} currentFormatted={cards ? fmtRec(cards.receitaAtual) : ''}
+                  prevYear={cards ? pd(cards.receitaPrevYear, fmtRec) : null}
+                  ytd={cards ? pd(cards.receitaYtd, fmtRec) : null}
+                  meta={cards ? pmd(cards.receitaMeta, fmtRec) : loadingMeta}
                   metaCumulative
                   referenceMonth={cardReferenceMonth}
+                  loading={cardsValueLoading}
                 />
                 <PerformanceCard
                   title="Ocupacao" icon={Percent} highlight delay={60}
-                  currentValue={cards.occAtual} currentFormatted={fmtOcc(cards.occAtual)}
-                  prevYear={pd(cards.occPrevYear, fmtOcc)}
-                  ytd={pd(cards.occYtd, fmtOcc)}
-                  meta={pmd(cards.occMeta, fmtOcc)}
+                  currentValue={cards?.occAtual ?? 0} currentFormatted={cards ? fmtOcc(cards.occAtual) : ''}
+                  prevYear={cards ? pd(cards.occPrevYear, fmtOcc) : null}
+                  ytd={cards ? pd(cards.occYtd, fmtOcc) : null}
+                  meta={cards ? pmd(cards.occMeta, fmtOcc) : loadingMeta}
                   referenceMonth={cardReferenceMonth}
+                  loading={cardsValueLoading}
                 />
                 <PerformanceCard
                   title="Diaria Media" icon={DollarSign} highlight delay={120}
-                  currentValue={cards.dmAtual} currentFormatted={fmtR(cards.dmAtual)}
-                  prevYear={pd(cards.dmPrevYear, fmtR)}
-                  ytd={pd(cards.dmYtd, fmtR)}
-                  meta={pmd(cards.dmMeta, fmtR)}
+                  currentValue={cards?.dmAtual ?? 0} currentFormatted={cards ? fmtR(cards.dmAtual) : ''}
+                  prevYear={cards ? pd(cards.dmPrevYear, fmtR) : null}
+                  ytd={cards ? pd(cards.dmYtd, fmtR) : null}
+                  meta={cards ? pmd(cards.dmMeta, fmtR) : loadingMeta}
                   referenceMonth={cardReferenceMonth}
+                  loading={cardsValueLoading}
                 />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-5" style={{ marginBottom: 40 }}>
                 <PerformanceCard
                   title="RevPAR" icon={TrendingUp} delay={180}
-                  currentValue={cards.revparAtual} currentFormatted={fmtR(cards.revparAtual)}
-                  prevYear={pd(cards.revparPrevYear, fmtR)}
-                  ytd={pd(cards.revparYtd, fmtR)}
+                  currentValue={cards?.revparAtual ?? 0} currentFormatted={cards ? fmtR(cards.revparAtual) : ''}
+                  prevYear={cards ? pd(cards.revparPrevYear, fmtR) : null}
+                  ytd={cards ? pd(cards.revparYtd, fmtR) : null}
+                  loading={cardsValueLoading}
                 />
                 <PerformanceCard
                   title="Room Nights" icon={BedDouble} delay={240}
-                  currentValue={cards.roomNightsAtual}
-                  currentFormatted={fmtInt(cards.roomNightsAtual)}
-                  prevYear={pd(cards.roomNightsPrevYear, fmtInt)}
-                  ytd={pd(cards.roomNightsYtd, fmtInt)}
+                  currentValue={cards?.roomNightsAtual ?? 0}
+                  currentFormatted={cards ? fmtInt(cards.roomNightsAtual) : ''}
+                  prevYear={cards ? pd(cards.roomNightsPrevYear, fmtInt) : null}
+                  ytd={cards ? pd(cards.roomNightsYtd, fmtInt) : null}
+                  loading={cardsValueLoading}
                 />
                 <PerformanceCard
                   title="Hospedes" icon={Users} delay={300}
-                  currentValue={cards.hospedesAtual}
-                  currentFormatted={fmtInt(cards.hospedesAtual)}
-                  prevYear={pd(cards.hospedesPrevYear, fmtInt)}
-                  ytd={pd(cards.hospedesYtd, fmtInt)}
+                  currentValue={cards?.hospedesAtual ?? 0}
+                  currentFormatted={cards ? fmtInt(cards.hospedesAtual) : ''}
+                  prevYear={cards ? pd(cards.hospedesPrevYear, fmtInt) : null}
+                  ytd={cards ? pd(cards.hospedesYtd, fmtInt) : null}
+                  loading={cardsValueLoading}
                 />
               </div>
             </>

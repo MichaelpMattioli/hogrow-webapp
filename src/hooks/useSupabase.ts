@@ -4,6 +4,12 @@ import { localDateKey } from '@/lib/utils';
 import { buildHotelSummary, parseKpiRow, deriveStatus } from '@/data/transforms';
 import type { HotelRow, ReceitaDiariaRow, KpiDiario, HotelSummary, PickupRow, BookingRate, HotelMeta } from '@/data/types';
 
+const CLIENTES_PAGE_MIN_LOADING_MS = 1000;
+
+function sleep(ms: number) {
+  return new Promise<void>(resolve => setTimeout(resolve, ms));
+}
+
 async function fetchClientHotelIds(): Promise<number[]> {
   const { data, error } = await supabase
     .from('hotel')
@@ -861,6 +867,7 @@ export interface ClientesPageRow {
   status: HotelSummary['status'];
   availableMonths: string[];
   selectedMesAno: string;
+  selectedDataPosicao: string;
   receitaMeta: number | null;
   receitaReal: number;
   receitaMetaPct: number | null;
@@ -888,6 +895,7 @@ function mapClientesPageRow(row: Record<string, unknown>): ClientesPageRow {
     status: (row.status as HotelSummary['status']) ?? 'critical',
     availableMonths: (row.available_months as string[] | null) ?? [],
     selectedMesAno: (row.selected_mes_ano as string) ?? '',
+    selectedDataPosicao: (row.selected_data_posicao as string) ?? '',
     receitaMeta: nullableNum(row.receita_meta),
     receitaReal: num(row.receita_real),
     receitaMetaPct: nullableNum(row.receita_meta_pct),
@@ -906,38 +914,53 @@ function mapClientesPageRow(row: Record<string, unknown>): ClientesPageRow {
   };
 }
 
-export function useClientesPage(mesAno: string) {
+export function useClientesPage(mesAno: string, dataPosicao: string) {
   const [rows, setRows] = useState<ClientesPageRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!mesAno) {
+    if (!mesAno || !dataPosicao) {
       setRows([]);
       setLoading(false);
       return;
     }
 
+    let cancelled = false;
+
     async function load() {
+      const startedAt = Date.now();
+      const waitForMinimumLoading = async () => {
+        const remaining = CLIENTES_PAGE_MIN_LOADING_MS - (Date.now() - startedAt);
+        if (remaining > 0) await sleep(remaining);
+      };
+
       setLoading(true);
       setError(null);
       try {
         const { data, error: err } = await supabase.rpc('rpc_clientes_page', {
           p_mes_ano: mesAno,
+          p_data_posicao: dataPosicao,
         });
 
         if (err) throw err;
-        setRows(((data ?? []) as Record<string, unknown>[]).map(mapClientesPageRow));
+        const nextRows = ((data ?? []) as Record<string, unknown>[]).map(mapClientesPageRow);
+        await waitForMinimumLoading();
+        if (!cancelled) setRows(nextRows);
       } catch (err: unknown) {
-        setRows([]);
-        setError(err instanceof Error ? err.message : 'Erro ao carregar clientes');
+        await waitForMinimumLoading();
+        if (!cancelled) {
+          setRows([]);
+          setError(err instanceof Error ? err.message : 'Erro ao carregar clientes');
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
 
     load();
-  }, [mesAno]);
+    return () => { cancelled = true; };
+  }, [mesAno, dataPosicao]);
 
   return { rows, loading, error };
 }
@@ -1216,13 +1239,24 @@ export function useClientePickupDiario(hotelId: number, mesAno: string) {
       setLoading(true);
       setError(null);
       try {
-        const { data, error: err } = await supabase.rpc('rpc_cliente_pickup_diario', {
-          p_hotel_id: hotelId,
-          p_mes_ano: mesAno,
-        });
+        const pageSize = 1000;
+        const loaded: Record<string, unknown>[] = [];
 
-        if (err) throw err;
-        if (!cancelled) setRows(((data ?? []) as Record<string, unknown>[]).map(mapClientePickupRow));
+        for (let from = 0; ; from += pageSize) {
+          const { data, error: err } = await supabase
+            .rpc('rpc_cliente_pickup_diario', {
+              p_hotel_id: hotelId,
+              p_mes_ano: mesAno,
+            })
+            .range(from, from + pageSize - 1);
+
+          if (err) throw err;
+          const page = (data ?? []) as Record<string, unknown>[];
+          loaded.push(...page);
+          if (cancelled || page.length < pageSize) break;
+        }
+
+        if (!cancelled) setRows(loaded.map(mapClientePickupRow));
       } catch (err: unknown) {
         if (!cancelled) {
           setRows([]);

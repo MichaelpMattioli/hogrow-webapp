@@ -3,6 +3,7 @@ import { CalendarRange, List } from 'lucide-react';
 import type { BookingRate, PickupRow } from '@/data/types';
 import PickupTable from './PickupTable';
 import PickupMensalTable from './PickupMensalTable';
+import { Skeleton } from '@/components/ui/Skeleton';
 
 type PickupView = 'diario' | 'mensal';
 
@@ -15,6 +16,42 @@ interface Props {
   shopperRates: BookingRate[];
   loading?: boolean;
   error?: string | null;
+}
+
+function PickupPanelSkeleton() {
+  return (
+    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r)', padding: 20 }}>
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+        gap: 18,
+        padding: '14px 0 16px',
+        borderBottom: '1px solid var(--border-l)',
+        marginBottom: 16,
+      }}>
+        <div>
+          <Skeleton width={110} height={10} style={{ marginBottom: 10 }} />
+          <Skeleton width="70%" height={30} style={{ marginBottom: 8 }} />
+          <Skeleton width="52%" height={10} />
+        </div>
+        <div>
+          <Skeleton width={132} height={10} style={{ marginBottom: 10 }} />
+          <Skeleton width={190} height={30} style={{ marginBottom: 8 }} />
+          <Skeleton width="64%" height={10} />
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gap: 8 }}>
+        {Array.from({ length: 9 }, (_, row) => (
+          <div key={row} style={{ display: 'grid', gridTemplateColumns: '1.4fr repeat(6, 1fr)', gap: 8 }}>
+            {Array.from({ length: 7 }, (_, col) => (
+              <Skeleton key={col} height={18} radius={4} />
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export default function PickupSection({
@@ -78,9 +115,7 @@ export default function PickupSection({
       </div>
 
       {view === 'diario' && loading ? (
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r)', padding: 32, textAlign: 'center', color: 'var(--text-m)', fontSize: 12 }}>
-          Carregando pick-up...
-        </div>
+        <PickupPanelSkeleton />
       ) : view === 'diario' && error ? (
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r)', padding: 32, textAlign: 'center', color: 'var(--red)', fontSize: 12, fontWeight: 700 }}>
           {error}

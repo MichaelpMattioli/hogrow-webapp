@@ -19,8 +19,8 @@ Objetivo: cada tela deve ter uma fonte de dados clara, com contrato estavel, men
 | --- | --- | --- | --- |
 | Metas (`/metas`) | `public.rpc_metas_page(p_mes_ano text)` | Implementada localmente | Carregar hoteis clientes e metas do mes em uma unica chamada leve. |
 | Home (`/`) | `public.rpc_home_page(p_mes_ano text, p_data_extracao date)` | Implementada localmente | Carregar KPIs do portfolio, alertas de pick-up de hoje e atingimento de metas em uma unica chamada. |
-| Clientes (`/clientes`) | `public.rpc_clientes_page(p_mes_ano text)` | Implementada localmente | Carregar ranking de clientes por mes de referencia, metas e acumulado anual em uma unica chamada. |
-| Detalhamento Cliente (`/clientes/:id`) | `rpc_cliente_detalhe_header`, `rpc_cliente_detalhe_cards`, `rpc_cliente_pickup_diario`, `rpc_cliente_pickup_mensal`, `rpc_cliente_rate_shopper` | Implementada localmente | Separar header/cards de modulos pesados para carregar pick-up e shopper sob demanda. |
+| Clientes (`/clientes`) | `public.rpc_clientes_page(p_mes_ano text)` + `public.mv_pickup_mensal_kpis` | Implementada localmente com MV mensal | Carregar ranking de clientes por mes de referencia, metas e acumulado anual em uma unica chamada sem recalcular pick-up mensal a cada load. |
+| Detalhamento Cliente (`/clientes/:id`) | `rpc_cliente_detalhe_header`, `rpc_cliente_detalhe_cards`, `rpc_cliente_pickup_diario`, `rpc_cliente_pickup_mensal`, `rpc_cliente_rate_shopper` + MVs nao-shopper | Implementada localmente com MVs no header/cards/pick-up | Separar header/cards de modulos pesados e evitar recalculo de pick-up diario/mensal a cada troca de mes. Shopper permanece live. |
 
 ## Template Para Novas Telas
 
@@ -630,6 +630,8 @@ Retorno: uma linha por hotel cliente ativo.
 
 ### SQL Inicial
 
+Atualizacao de performance em 2026-05-27: a implementacao ativa passou a consultar `public.mv_pickup_mensal_kpis`, materializada a partir de `public.vw_pickup_mensal_kpis`. O contrato da RPC nao muda. A MV evita que o PostgREST recalcule a view mensal em chamadas concorrentes da aba Clientes e deve ser atualizada apos cargas/ETLs que alterem `hotel_receita_diaria` ou as fontes de pick-up.
+
 Esta v1 usa `vw_hotel_monthly_kpis` para o mes de referencia, mes anterior, mesmo mes do ano anterior e YTD. Para o mes atual sem linha mensal, faz fallback em `vw_hotel_summary`, preservando o comportamento atual da tela.
 
 ```sql
@@ -845,17 +847,17 @@ create index if not exists idx_hotel_metas_hotel_mes
   on public.hotel_metas (hotel_id, mes_ano);
 ```
 
-Para `vw_hotel_monthly_kpis`, o indice precisa estar na tabela/materialized view base. Se ela for uma materialized view, criar:
+Para a implementacao ativa da aba Clientes, os indices ficam na materialized view mensal:
 
 ```sql
-create index if not exists idx_vw_hotel_monthly_kpis_hotel_mes
-  on public.vw_hotel_monthly_kpis (hotel_id, mes_ano);
+create unique index if not exists mv_pickup_mensal_kpis_hotel_mes_key
+  on public.mv_pickup_mensal_kpis (hotel_id, mes_ano);
 
-create index if not exists idx_vw_hotel_monthly_kpis_mes
-  on public.vw_hotel_monthly_kpis (mes_ano);
+create index if not exists idx_mv_pickup_mensal_kpis_mes_hotel
+  on public.mv_pickup_mensal_kpis (mes_ano, hotel_id);
 ```
 
-Se for view comum, criar indices nas tabelas que alimentam `hotel_id` e `data_referencia`.
+Apos carga de dados, refrescar a MV com `public.refresh_mv_pickup_mensal_kpis()` usando uma role de backend/servico. A RPC `public.rpc_clientes_page` deve continuar disponivel para `anon` e `authenticated`; o refresh da MV nao deve ser exposto ao frontend publico.
 
 ### Hook Frontend Sugerido
 
@@ -965,14 +967,28 @@ Implementacao local:
 - [`../../supabase/migrations/20260526180500_create_cliente_detalhe_module_rpcs.sql`](../../supabase/migrations/20260526180500_create_cliente_detalhe_module_rpcs.sql)
 - [`../../supabase/migrations/20260526182000_fix_cliente_detalhe_cards_current_date.sql`](../../supabase/migrations/20260526182000_fix_cliente_detalhe_cards_current_date.sql)
 - [`../../supabase/migrations/20260526183500_fix_rpc_cliente_pickup_diario_full_reference_month.sql`](../../supabase/migrations/20260526183500_fix_rpc_cliente_pickup_diario_full_reference_month.sql)
+- [`../../supabase/migrations/20260527124500_materialize_cliente_detalhe_non_shopper.sql`](../../supabase/migrations/20260527124500_materialize_cliente_detalhe_non_shopper.sql)
 
 | Modulo | RPC | Quando carregar | Motivo |
 | --- | --- | --- | --- |
-| Header | `public.rpc_cliente_detalhe_header(p_hotel_id bigint)` | Ao abrir a pagina | Dados leves do hotel, meses disponiveis e ultimo snapshot. |
-| Cards | `public.rpc_cliente_detalhe_cards(p_hotel_id bigint, p_mes_ano text)` | Ao abrir e ao trocar mes | KPIs do mes, YoY, YTD e metas do mes, sempre limitando datas de referencia a `current_date`. |
-| Pick-up diario | `public.rpc_cliente_pickup_diario(p_hotel_id bigint, p_mes_ano text)` | Ao abrir aba/bloco de pick-up diario | Evita carregar todo o historico de `vw_pickup_diario`. |
-| Pick-up mensal | `public.rpc_cliente_pickup_mensal(p_hotel_id bigint, p_ano integer)` | Ao abrir visao mensal ou trocar ano | Mantem a tabela anual pequena e adiciona contador de alteracoes diarias. |
+| Header | `public.rpc_cliente_detalhe_header(p_hotel_id bigint)` | Ao abrir a pagina | Le em `mv_cliente_detalhe_latest_daily` para meses disponiveis, ultimo snapshot e status. |
+| Cards | `public.rpc_cliente_detalhe_cards(p_hotel_id bigint, p_mes_ano text)` | Ao abrir e ao trocar mes | Le em `mv_cliente_detalhe_monthly_kpis` para KPIs do mes, YoY, YTD e metas do mes. |
+| Pick-up diario | `public.rpc_cliente_pickup_diario(p_hotel_id bigint, p_mes_ano text)` | Ao abrir aba/bloco de pick-up diario | Le em `mv_cliente_pickup_diario`; o hook pagina a RPC para receber meses com mais de 1000 linhas. |
+| Pick-up mensal | `public.rpc_cliente_pickup_mensal(p_hotel_id bigint, p_ano integer)` | Ao abrir visao mensal ou trocar ano | Le em `mv_pickup_mensal_kpis` e usa `mv_cliente_pickup_diario` para o contador de alteracoes diarias. |
 | Shopper | `public.rpc_cliente_rate_shopper(p_hotel_id bigint, p_mes_ano text, p_from date, p_keep_latest boolean)` | Ao abrir calendario ou para meses do pick-up | Restringe tarifas por mes e opcionalmente mantem apenas a ultima coleta. |
+
+### Materialized Views: Detalhamento Cliente
+
+Atualizacao de performance em 2026-05-27: os modulos nao-shopper do detalhe passaram a usar materialized views. O contrato das RPCs nao muda.
+
+| MV | Alimenta | Conteudo |
+| --- | --- | --- |
+| `public.mv_cliente_detalhe_latest_daily` | Header | Ultimo snapshot por hotel cliente e data de referencia. |
+| `public.mv_cliente_pickup_diario` | Pick-up diario e contador mensal | Linhas comparaveis de pick-up diario por hotel, data de referencia e data de extracao. |
+| `public.mv_cliente_detalhe_monthly_kpis` | Cards | KPIs mensais calculados a partir do ultimo snapshot comparavel de cada data de referencia. |
+| `public.mv_pickup_mensal_kpis` | Pick-up mensal e Clientes | KPIs mensais de pick-up ja materializados para evitar recalculo de `vw_pickup_mensal_kpis`. |
+
+O shopper nao foi materializado nesta etapa porque depende de coletas e filtros de disponibilidade/preco por `scraped_at`, `checkin_date` e `p_keep_latest`.
 
 ### Contrato: Header
 
@@ -1120,6 +1136,24 @@ create index if not exists idx_booking_rates_hotel_slug_checkin_scraped
 ```
 
 Para `vw_pickup_diario`, os indices devem ficar na tabela base real. Se a fonte continuar sendo `hotel_receita_diaria`, priorizar `(hotel_id, data_referencia, data_extracao desc)`.
+
+Na implementacao com MVs do detalhe, os indices principais sao:
+
+```sql
+create unique index if not exists mv_cliente_detalhe_latest_daily_hotel_ref_key
+  on public.mv_cliente_detalhe_latest_daily (hotel_id, data_referencia);
+
+create index if not exists idx_mv_cliente_pickup_diario_hotel_ref_ext
+  on public.mv_cliente_pickup_diario (hotel_id, data_referencia, data_extracao);
+
+create index if not exists idx_mv_cliente_pickup_diario_hotel_ext_ref
+  on public.mv_cliente_pickup_diario (hotel_id, data_extracao, data_referencia);
+
+create unique index if not exists mv_cliente_detalhe_monthly_kpis_hotel_mes_key
+  on public.mv_cliente_detalhe_monthly_kpis (hotel_id, mes_ano);
+```
+
+Apos carga de dados, refrescar as MVs nao-shopper com `public.refresh_cliente_detail_materialized_views()` usando uma role de backend/servico. O entrypoint antigo `public.refresh_mv_pickup_mensal_kpis()` tambem foi mantido e passa a refrescar o conjunto do detalhe por compatibilidade.
 
 ### Uso Esperado Na Tela
 

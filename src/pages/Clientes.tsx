@@ -1,9 +1,9 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useClientesPage, type ClientesPageRow, type MonthlyKpi } from '@/hooks/useSupabase';
-import { Loader2, ChevronUp, ChevronDown, TrendingUp, TrendingDown, Minus, ChevronsUpDown, Hash } from 'lucide-react';
+import { ChevronUp, ChevronDown, TrendingUp, TrendingDown, Minus, ChevronsUpDown, Hash } from 'lucide-react';
 import type { HotelSummary, HotelMeta } from '@/data/types';
-import { STATUS_CONFIG } from '@/lib/utils';
+import { localDateKey, STATUS_CONFIG } from '@/lib/utils';
 import { deriveStatus } from '@/data/transforms';
 import HeaderMonthReference from '@/components/ui/HeaderMonthReference';
 
@@ -47,6 +47,20 @@ function monthElapsedRatio(referenceMonth = currentMesAno()): number {
 function currentMesAno() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function monthEndDateKey(ym: string) {
+  const [year, month] = ym.split('-').map(Number);
+  const lastDay = new Date(year, month, 0).getDate();
+  return `${ym}-${String(lastDay).padStart(2, '0')}`;
+}
+
+function defaultPositionForMonth(ym: string) {
+  const today = localDateKey();
+  const monthStart = `${ym}-01`;
+  const monthEnd = monthEndDateKey(ym);
+  if (today < monthStart) return monthStart;
+  return today < monthEnd ? today : monthEnd;
 }
 
 const MES_LABELS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
@@ -628,11 +642,12 @@ export default function Clientes() {
   const [sortDir, setSortDir]     = useState<SortDir>('desc');
   const [fullNumbers, setFull]    = useState(true);
   const [selectedMonth, setSelectedMonth] = useState(() => currentMesAno());
+  const [selectedPosition, setSelectedPosition] = useState(() => defaultPositionForMonth(currentMesAno()));
   const navigate      = useNavigate();
   const [searchParams] = useSearchParams();
   const q = (searchParams.get('q') ?? '').toLowerCase().trim();
 
-  const { rows, loading, error } = useClientesPage(selectedMonth);
+  const { rows, loading, error } = useClientesPage(selectedMonth, selectedPosition);
 
   const availableMonths = useMemo(() => {
     const months = [...new Set(rows.flatMap(row => row.availableMonths))];
@@ -641,10 +656,20 @@ export default function Clientes() {
     return months.sort();
   }, [rows]);
 
+  const handleReferenceMonthSelect = (month: string) => {
+    setSelectedMonth(month);
+    setSelectedPosition(defaultPositionForMonth(month));
+  };
+
+  const handlePositionSelect = (date: string) => {
+    if (!date.startsWith(`${selectedMonth}-`)) return;
+    setSelectedPosition(date);
+  };
+
   useEffect(() => {
     if (availableMonths.length === 0 || availableMonths.includes(selectedMonth)) return;
     const current = currentMesAno();
-    setSelectedMonth(availableMonths.includes(current) ? current : availableMonths[availableMonths.length - 1]);
+    handleReferenceMonthSelect(availableMonths.includes(current) ? current : availableMonths[availableMonths.length - 1]);
   }, [availableMonths, selectedMonth]);
 
   const referenceHotels = useMemo(
@@ -704,8 +729,13 @@ export default function Clientes() {
   }, [filtered, sortCol, sortDir, metaMap, annualMetaMap]);
 
   const shProps = { active: sortCol, dir: sortDir, onSort: handleSort };
-  const isInitialLoading = loading && referenceHotels.length === 0;
-  const isRefreshing = loading && referenceHotels.length > 0;
+  const rowsReferenceMonth = rows[0]?.selectedMesAno;
+  const rowsPositionDate = rows[0]?.selectedDataPosicao;
+  const hasStaleRows = Boolean(
+    (rowsReferenceMonth && rowsReferenceMonth !== selectedMonth) ||
+    (rowsPositionDate && rowsPositionDate !== selectedPosition)
+  );
+  const isTableLoading = loading || hasStaleRows;
 
   return (
     <div className="fade-in">
@@ -714,9 +744,7 @@ export default function Clientes() {
         <div>
           <h2 style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.4px' }}>Clientes</h2>
           <p style={{ fontSize: 12.5, color: 'var(--text-m)', marginTop: 2 }}>
-            {isInitialLoading
-              ? 'Carregando dados da tabela'
-              : q
+            {!isTableLoading && q
               ? `${sorted.length} resultado${sorted.length !== 1 ? 's' : ''} para "${q}"`
               : `${referenceHotels.length} ${referenceHotels.length === 1 ? 'hotel' : 'hotéis'} · receita por referência`}
           </p>
@@ -725,7 +753,9 @@ export default function Clientes() {
           <HeaderMonthReference
             selectedMonth={selectedMonth}
             availableMonths={availableMonths}
-            onSelect={setSelectedMonth}
+            onSelect={handleReferenceMonthSelect}
+            selectedPosition={selectedPosition}
+            onPositionSelect={handlePositionSelect}
           />
 
           {/* Full / abbreviated toggle */}
@@ -752,7 +782,7 @@ export default function Clientes() {
         </div>
       </div>
 
-      {!isInitialLoading && !error && sorted.length === 0 ? (
+      {!isTableLoading && !error && sorted.length === 0 ? (
         <div style={{
           padding: '64px 24px', background: 'var(--surface)',
           border: '1px solid var(--border)', borderRadius: 'var(--r)', textAlign: 'center',
@@ -824,7 +854,7 @@ export default function Clientes() {
               </thead>
 
               <tbody>
-                {isInitialLoading ? (
+                {isTableLoading ? (
                   <LoadingRows />
                 ) : error ? (
                   <TableMessage tone="error">{error}</TableMessage>
@@ -849,31 +879,6 @@ export default function Clientes() {
               </tbody>
             </table>
           </div>
-
-          {isRefreshing && (
-            <div
-              style={{
-                position: 'absolute',
-                top: 10,
-                right: 12,
-                zIndex: 3,
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 7,
-                padding: '6px 10px',
-                borderRadius: 'var(--rx)',
-                border: '1px solid var(--border)',
-                background: 'color-mix(in srgb, var(--surface) 92%, transparent)',
-                boxShadow: 'var(--sh)',
-                color: 'var(--text-m)',
-                fontSize: 11,
-                fontWeight: 800,
-              }}
-            >
-              <Loader2 size={12} className="animate-spin" style={{ color: 'var(--accent)' }} />
-              Atualizando tabela
-            </div>
-          )}
 
           {/* ── Footer ── */}
           <div style={{

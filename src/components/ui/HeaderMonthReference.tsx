@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { localDateKey } from '@/lib/utils';
 
 const MES_PT = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 const MES_PT_FULL = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
@@ -15,16 +16,38 @@ function fmtMonthRange(ym: string) {
   return `01/${month}/${year} a ${lastDay}/${month}/${year}`;
 }
 
+function fmtDateBR(date: string) {
+  const [year, month, day] = date.split('-');
+  return `${day}/${month}/${year}`;
+}
+
+function calendarDays(ym: string) {
+  const [year, month] = ym.split('-').map(Number);
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const firstWeekday = new Date(year, month - 1, 1).getDay();
+  return {
+    blanks: Array.from({ length: firstWeekday }),
+    days: Array.from({ length: daysInMonth }, (_, index) => {
+      const day = index + 1;
+      return `${ym}-${String(day).padStart(2, '0')}`;
+    }),
+  };
+}
+
 interface HeaderMonthReferenceProps {
   selectedMonth: string;
   availableMonths: string[];
   onSelect: (month: string) => void;
+  selectedPosition?: string;
+  onPositionSelect?: (date: string) => void;
 }
 
 export default function HeaderMonthReference({
   selectedMonth,
   availableMonths,
   onSelect,
+  selectedPosition,
+  onPositionSelect,
 }: HeaderMonthReferenceProps) {
   const [open, setOpen] = useState(false);
   const [year, setYear] = useState(() => Number(selectedMonth.slice(0, 4)));
@@ -38,6 +61,8 @@ export default function HeaderMonthReference({
   const activeIndex = months.indexOf(selectedMonth);
   const prevMonth = activeIndex > 0 ? months[activeIndex - 1] : null;
   const nextMonth = activeIndex >= 0 && activeIndex < months.length - 1 ? months[activeIndex + 1] : null;
+  const selectedCalendar = useMemo(() => calendarDays(selectedMonth), [selectedMonth]);
+  const today = localDateKey();
   const prevYear = useMemo(
     () => [...availableYears].reverse().find(y => y < year) ?? null,
     [availableYears, year]
@@ -76,6 +101,11 @@ export default function HeaderMonthReference({
 
   const selectMonth = (month: string) => {
     onSelect(month);
+    if (!onPositionSelect) setOpen(false);
+  };
+
+  const selectPosition = (date: string) => {
+    onPositionSelect?.(date);
     setOpen(false);
   };
 
@@ -130,6 +160,11 @@ export default function HeaderMonthReference({
         <div style={{ marginTop: 3, fontSize: 10.5, fontWeight: 650, color: 'var(--text-m)', whiteSpace: 'nowrap' }}>
           {fmtMonthRange(selectedMonth)}
         </div>
+        {selectedPosition && (
+          <div style={{ marginTop: 2, fontSize: 10.5, fontWeight: 850, color: 'var(--accent)', whiteSpace: 'nowrap' }}>
+            Visão em {fmtDateBR(selectedPosition)}
+          </div>
+        )}
       </button>
 
       <button
@@ -148,7 +183,7 @@ export default function HeaderMonthReference({
           top: 'calc(100% + 8px)',
           left: 39,
           zIndex: 80,
-          width: 260,
+          width: onPositionSelect ? 306 : 260,
           background: 'var(--surface)',
           border: '1px solid var(--border)',
           borderRadius: 'var(--r)',
@@ -215,6 +250,60 @@ export default function HeaderMonthReference({
               );
             })}
           </div>
+
+          {onPositionSelect && (
+            <>
+              <div style={{ height: 1, background: 'var(--border-l)', margin: '13px 0 11px' }} />
+              <div style={{ marginBottom: 8 }}>
+                <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: 0.6, color: 'var(--accent)', textTransform: 'uppercase' }}>
+                  Referência da visão
+                </div>
+                <div style={{ marginTop: 2, fontSize: 11, fontWeight: 650, color: 'var(--text-m)' }}>
+                  {selectedPosition ? fmtDateBR(selectedPosition) : 'Selecione uma data'}
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginBottom: 5 }}>
+                {['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map((label, index) => (
+                  <span key={`${label}-${index}`} style={{ textAlign: 'center', fontSize: 9, fontWeight: 800, color: 'var(--text-m)' }}>
+                    {label}
+                  </span>
+                ))}
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
+                {selectedCalendar.blanks.map((_, index) => (
+                  <span key={`blank-${index}`} />
+                ))}
+                {selectedCalendar.days.map(date => {
+                  const day = Number(date.slice(-2));
+                  const selected = selectedPosition === date;
+                  const disabled = date > today;
+                  return (
+                    <button
+                      key={date}
+                      disabled={disabled}
+                      onClick={() => selectPosition(date)}
+                      style={{
+                        height: 28,
+                        borderRadius: 'var(--rx)',
+                        fontSize: 11,
+                        fontWeight: selected ? 850 : 650,
+                        border: `1.5px solid ${selected ? 'var(--accent)' : 'transparent'}`,
+                        background: selected ? 'var(--accent)' : 'var(--bg)',
+                        color: selected ? '#fff' : disabled ? 'var(--text-m)' : 'var(--text)',
+                        opacity: disabled ? 0.35 : 1,
+                        cursor: disabled ? 'default' : 'pointer',
+                        transition: 'all .1s',
+                      }}
+                    >
+                      {day}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>
