@@ -18,7 +18,7 @@ Objetivo: cada tela deve ter uma fonte de dados clara, com contrato estavel, men
 | Tela | RPC/View | Status | Motivo |
 | --- | --- | --- | --- |
 | Metas (`/metas`) | `public.rpc_metas_page(p_mes_ano text)` | Implementada localmente | Carregar hoteis clientes e metas do mes em uma unica chamada leve. |
-| Home (`/`) | `public.rpc_home_page(p_mes_ano text, p_data_extracao date)` | Implementada localmente | Carregar KPIs do portfolio, alertas de pick-up de hoje e atingimento de metas em uma unica chamada. |
+| Home (`/`) | `public.mv_home_page_client_metrics` + `public.rpc_home_page(p_mes_ano text, p_data_extracao date)` | Implementada no Supabase e frontend | Materializar KPIs e pick-up da tela inicial por data real de extracao, mantendo metas em join leve na RPC. |
 | Clientes (`/clientes`) | `public.rpc_clientes_calendar(p_mes_ano text, p_data_extracao date)` + `public.rpc_clientes_table(p_mes_ano text, p_data_extracao date)` + `public.mv_clientes_reference_calendar` | Implementada no frontend e Supabase | Separar calendario leve da tabela de clientes, usando apenas datas reais de extracao e os meses disponiveis em cada visao. |
 | Detalhamento Cliente (`/clientes/:id`) | `rpc_cliente_detalhe_header`, `rpc_cliente_detalhe_calendar`, `rpc_cliente_detalhe_cards`, `rpc_cliente_pickup_diario`, `rpc_cliente_pickup_mensal`, `rpc_cliente_rate_shopper` + MVs nao-shopper | Implementada com calendario de visao de extracao | Separar header/calendario/cards/pick-up, mantendo mes de referencia e data de extracao sincronizados entre topo e pick-up diario. Shopper permanece live. |
 
@@ -286,9 +286,187 @@ Retorno: uma linha por hotel cliente ativo.
 | `pickup_receita` | `numeric` | Impacto receita |
 | `pickup_referencias` | `date[]` | Datas alteradas |
 
-### SQL Inicial
+### V2 Implementada: MV + RPC Sincronizadas
 
-Esta versao usa `vw_hotel_summary` como fonte dos KPIs atuais porque ela ja existe. Se a Home continuar lenta, o proximo passo e criar uma view/materialized view especifica para estes campos.
+Status: implementado nas migrations `20260529224500_home_page_materialized_metrics.sql` e `20260529231000_home_page_mv_include_all_active_clients.sql`. A RPC ativa `rpc_home_page` nao consulta mais `hotel_receita_diaria` diretamente; ela le a MV `mv_home_page_client_metrics` e faz apenas o join vivo com `hotel_metas`.
+
+Decisoes:
+
+- A MV guarda somente fatos pesados e agregados que dependem de `hotel_receita_diaria`.
+- A MV inclui todos os hoteis clientes ativos em cada mes disponivel da visao, mesmo quando um hotel esta sem dado naquele mes; nesses casos os KPIs ficam zerados/nulos.
+- `hotel_metas` fica fora da MV e entra por `left join` dentro da RPC, para uma meta editada aparecer sem depender de refresh da MV.
+- A RPC continua sendo o contrato unico do frontend.
+- `p_data_extracao` deve resolver para uma data real de extracao. Se a tela enviar `current_date` e nao existir carga nesse dia, a RPC deve usar a ultima `data_extracao` disponivel menor ou igual a data solicitada.
+- Nenhum KPI da Home deve depender implicitamente de `current_date` quando existir uma `data_extracao` resolvida; a visao precisa ser a foto daquela extracao.
+
+#### Materialized View
+
+Nome:
+
+```sql
+public.mv_home_page_client_metrics
+```
+
+Grao:
+
+```text
+1 linha por data_extracao + mes_ano + hotel_id
+```
+
+Observacao: `data_extracao + mes_ano` vem dos meses disponiveis na visao materializada; a grade final cruza esses meses com todos os clientes ativos para preservar a contagem da Home.
+
+Fontes:
+
+| Fonte | Uso |
+| --- | --- |
+| `public.hotel` | Lista de hoteis clientes ativos, nome, localizacao e UHs. |
+| `public.hotel_receita_diaria` | KPIs mensais/YTD e calculo agregado de pick-up por data de extracao. |
+
+Regra de snapshot:
+
+- Para cada `data_extracao`, `hotel_id` e `data_referencia`, usar a linha mais recente conhecida ate aquela extracao.
+- Ordenacao do snapshot: `data_extracao desc`, `created_at desc`, `id desc`.
+- `mes_ano` representa o mes dos dados visualizados, derivado de `data_referencia`.
+- `receita_mes_atual`, `occ_atual`, `revpar_atual` e `dm_atual` devem usar as diarias do `mes_ano` dentro da visao da extracao selecionada.
+- `receita_periodo` deve representar o acumulado do ano de `mes_ano` ate o fim do proprio `mes_ano`, usando a mesma visao de extracao. Se a regra de produto for "somente realizado ate a data da extracao", trocar esse corte para `data_referencia <= data_extracao`.
+- Pick-up deve comparar as linhas da `data_extracao` com a extracao imediatamente anterior do mesmo `hotel_id + data_referencia`.
+
+Campos da MV:
+
+| Coluna | Tipo | Regra/Uso |
+| --- | --- | --- |
+| `data_extracao` | `date` | Data real da visao da extracao. |
+| `mes_ano` | `text` | Mes de referencia dos dados, formato `YYYY-MM`. |
+| `hotel_id` | `bigint` | Chave do hotel. |
+| `hotel_nome` | `text` | Nome exibido na Home. |
+| `cidade` | `text` | Subtitulo do card de metas. |
+| `estado` | `text` | Subtitulo do card de metas. |
+| `total_uhs` | `integer` | Contexto do hotel e uso futuro. |
+| `receita_periodo` | `numeric` | Receita acumulada do periodo da Home. |
+| `receita_mes_atual` | `numeric` | Receita do `mes_ano` selecionado. |
+| `occ_atual` | `numeric` | Ocupacao media do `mes_ano`. |
+| `revpar_atual` | `numeric` | RevPAR medio do `mes_ano`. |
+| `dm_atual` | `numeric` | Diaria media do `mes_ano`, calculada por `rec_diarias / ocupados`. |
+| `ocupados_mes_atual` | `numeric` | Base para auditoria/fallback de diaria media. |
+| `rec_diarias_mes_atual` | `numeric` | Base para auditoria/fallback de diaria media. |
+| `pickup_data_extracao` | `date` | Igual a `data_extracao` quando houver alteracao; `null` sem alerta. |
+| `pickup_alteracoes` | `integer` | Quantidade de referencias alteradas nessa extracao. |
+| `pickup_uhs` | `numeric` | Soma do delta de UHs/ocupados contra a extracao anterior. |
+| `pickup_receita` | `numeric` | Soma do delta de receita contra a extracao anterior. |
+| `pickup_referencias` | `date[]` | Datas de referencia alteradas. |
+
+Indices esperados:
+
+```sql
+create unique index if not exists mv_home_page_client_metrics_key
+  on public.mv_home_page_client_metrics (data_extracao, mes_ano, hotel_id);
+
+create index if not exists idx_mv_home_page_client_metrics_mes_extracao
+  on public.mv_home_page_client_metrics (mes_ano, data_extracao);
+
+create index if not exists idx_mv_home_page_client_metrics_hotel
+  on public.mv_home_page_client_metrics (hotel_id);
+```
+
+Refresh:
+
+```sql
+create or replace function public.refresh_mv_home_page_client_metrics()
+returns table (
+  refreshed_at timestamptz,
+  rows_refreshed bigint
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  refresh materialized view public.mv_home_page_client_metrics;
+  analyze public.mv_home_page_client_metrics;
+
+  return query
+  select now(), count(*)::bigint
+  from public.mv_home_page_client_metrics;
+end;
+$$;
+```
+
+O refresh deve rodar depois das cargas/ETLs que alterem `hotel_receita_diaria` ou atributos de `hotel` usados pela MV. Alteracoes em `hotel_metas` nao exigem refresh, pois metas entram na RPC. O entrypoint `refresh_cliente_detail_materialized_views()` tambem passou a refrescar `mv_home_page_client_metrics`.
+
+#### RPC V2
+
+Nome:
+
+```sql
+public.rpc_home_page(p_mes_ano text default null, p_data_extracao date default null)
+```
+
+Fontes:
+
+| Fonte | Uso |
+| --- | --- |
+| `public.mv_home_page_client_metrics` | Dados materializados da Home. |
+| `public.hotel_metas` | Metas do mes selecionado, em join vivo. |
+
+Resolucao de parametros:
+
+| Parametro | Regra |
+| --- | --- |
+| `p_data_extracao` | Se vier `null`, usar `max(data_extracao)` da MV. Se vier preenchido, usar `max(data_extracao) <= p_data_extracao`; se nao houver, cair para `max(data_extracao)`. |
+| `p_mes_ano` | Se vier preenchido e existir na extracao resolvida, usar esse mes. Se vier `null` ou indisponivel, usar o mes da `selected_data_extracao`; se esse mes nao existir, cair para o mes disponivel mais recente menor ou igual ao mes da extracao; por ultimo, o menor mes disponivel. |
+
+Retorno da RPC:
+
+| Coluna | Tipo | Origem |
+| --- | --- | --- |
+| `selected_mes_ano` | `text` | Mes resolvido pela RPC. |
+| `selected_data_extracao` | `date` | Data de extracao real resolvida pela RPC. |
+| `hotel_id` | `bigint` | MV. |
+| `hotel_nome` | `text` | MV. |
+| `cidade` | `text` | MV. |
+| `estado` | `text` | MV. |
+| `total_uhs` | `integer` | MV. |
+| `receita_periodo` | `numeric` | MV. |
+| `occ_atual` | `numeric` | MV. |
+| `revpar_atual` | `numeric` | MV. |
+| `dm_atual` | `numeric` | MV. |
+| `receita_mes_atual` | `numeric` | MV. |
+| `ocupados_mes_atual` | `numeric` | MV. |
+| `rec_diarias_mes_atual` | `numeric` | MV. |
+| `meta_id` | `bigint` | `hotel_metas`. |
+| `receita_meta` | `numeric` | `hotel_metas`. |
+| `occ_meta` | `numeric` | `hotel_metas`. |
+| `dm_meta` | `numeric` | `hotel_metas`. |
+| `receita_meta_pct` | `numeric` | Calculado na RPC. |
+| `occ_meta_pct` | `numeric` | Calculado na RPC. |
+| `dm_meta_pct` | `numeric` | Calculado na RPC. |
+| `goal_score` | `numeric` | Menor percentual valido entre receita, ocupacao e diaria media. |
+| `pickup_data_extracao` | `date` | MV. |
+| `pickup_alteracoes` | `integer` | MV. |
+| `pickup_uhs` | `numeric` | MV. |
+| `pickup_receita` | `numeric` | MV. |
+| `pickup_referencias` | `date[]` | MV. |
+
+Uso esperado no frontend:
+
+- `Home.tsx` continua chamando apenas `useHomePage`.
+- O hook pode mandar `p_data_extracao = current_date`; a RPC faz fallback para a ultima data real de extracao.
+- O hook mapeia `selected_mes_ano`, `selected_data_extracao`, `ocupados_mes_atual` e `rec_diarias_mes_atual`.
+- O card de metas usa `selected_mes_ano` retornado pela RPC como mes de referencia.
+
+Migracao aplicada:
+
+1. Criada `mv_home_page_client_metrics`.
+2. Criados indices da MV.
+3. Criada `refresh_mv_home_page_client_metrics()`.
+4. Recriada `rpc_home_page` para consultar a MV e fazer join com `hotel_metas`.
+5. Atualizado `useHomePage` para mapear os campos novos.
+6. Atualizada `Home.tsx` para usar `selected_mes_ano` e `selected_data_extracao`.
+7. Validado no Supabase que `rpc_home_page` usa `mv_home_page_client_metrics`, nao le `hotel_receita_diaria` diretamente e retorna 48 clientes ativos para `2026-05` na extracao `2026-05-29`.
+
+### Historico: SQL Inicial
+
+Esta secao registra a primeira proposta da Home antes da MV v2. Ela nao representa mais a implementacao ativa.
 
 Implementacao local:
 
@@ -450,6 +628,8 @@ Se `vw_pickup_diario` continuar custosa, considerar uma view/materialized view a
 
 ```ts
 export interface HomePageRow {
+  selectedMesAno: string;
+  selectedDataExtracao: string;
   hotelId: number;
   hotelNome: string;
   cidade: string | null;
@@ -460,6 +640,8 @@ export interface HomePageRow {
   revparAtual: number;
   dmAtual: number | null;
   receitaMesAtual: number;
+  ocupadosMesAtual: number;
+  recDiariasMesAtual: number;
   metaId: number | null;
   receitaMeta: number | null;
   occMeta: number | null;
@@ -484,6 +666,8 @@ export async function fetchHomePage(mesAno: string, dataExtracao: string): Promi
   if (error) throw error;
 
   return ((data ?? []) as Record<string, unknown>[]).map(row => ({
+    selectedMesAno: row.selected_mes_ano as string,
+    selectedDataExtracao: row.selected_data_extracao as string,
     hotelId: row.hotel_id as number,
     hotelNome: row.hotel_nome as string,
     cidade: row.cidade as string | null,
@@ -494,6 +678,8 @@ export async function fetchHomePage(mesAno: string, dataExtracao: string): Promi
     revparAtual: row.revpar_atual as number,
     dmAtual: row.dm_atual as number | null,
     receitaMesAtual: row.receita_mes_atual as number,
+    ocupadosMesAtual: row.ocupados_mes_atual as number,
+    recDiariasMesAtual: row.rec_diarias_mes_atual as number,
     metaId: row.meta_id as number | null,
     receitaMeta: row.receita_meta as number | null,
     occMeta: row.occ_meta as number | null,

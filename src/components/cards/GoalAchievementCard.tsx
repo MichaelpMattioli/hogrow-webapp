@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { ChevronRight, Loader2, Target } from 'lucide-react';
 import type { HotelMeta, HotelSummary } from '@/data/types';
 
@@ -16,6 +17,15 @@ type GoalMetric = {
   cumulative: boolean;
   formatter: (value: number) => string;
 };
+
+type SortKey = 'cliente' | 'receita' | 'occ' | 'dm';
+
+const sortOptions: Array<{ key: SortKey; label: string }> = [
+  { key: 'cliente', label: 'Cliente' },
+  { key: 'receita', label: 'Receita' },
+  { key: 'occ', label: 'Ocupação' },
+  { key: 'dm', label: 'Diária média' },
+];
 
 const ok = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value);
@@ -115,6 +125,7 @@ function MetricCell({ metric, elapsedPct }: { metric: GoalMetric; elapsedPct: nu
 }
 
 export default function GoalAchievementCard({ hotels, metas, referenceMonth, loading = false, onSelect }: GoalAchievementCardProps) {
+  const [sortKey, setSortKey] = useState<SortKey>('cliente');
   const elapsedPct = monthElapsedPct();
   const referenceMonthLabel = formatMonthLabel(referenceMonth);
   const metaByHotel = new Map(metas.map(meta => [meta.hotelId, meta]));
@@ -158,11 +169,24 @@ export default function GoalAchievementCard({ hotels, metas, referenceMonth, loa
         location: formatLocation(hotel),
         metrics,
         hasMeta: available.length > 0,
-        score: available.length > 0 ? Math.min(...available) : 999,
       };
     })
     .filter(row => row.hasMeta)
-    .sort((a, b) => a.score - b.score || a.hotel.name.localeCompare(b.hotel.name));
+    .sort((a, b) => {
+      if (sortKey === 'cliente') {
+        return a.hotel.name.localeCompare(b.hotel.name, 'pt-BR');
+      }
+
+      const aValue = a.metrics[sortKey].pct;
+      const bValue = b.metrics[sortKey].pct;
+
+      if (ok(aValue) && ok(bValue)) {
+        return bValue - aValue || a.hotel.name.localeCompare(b.hotel.name, 'pt-BR');
+      }
+      if (ok(aValue)) return -1;
+      if (ok(bValue)) return 1;
+      return a.hotel.name.localeCompare(b.hotel.name, 'pt-BR');
+    });
 
   return (
     <div
@@ -197,6 +221,29 @@ export default function GoalAchievementCard({ hotels, metas, referenceMonth, loa
         </p>
       ) : (
         <div>
+          <div className="flex flex-wrap gap-2 mb-4">
+            {sortOptions.map(option => {
+              const active = option.key === sortKey;
+
+              return (
+                <button
+                  key={option.key}
+                  type="button"
+                  className="text-[11px] font-bold transition-colors duration-150"
+                  style={{
+                    borderRadius: 999,
+                    padding: '6px 10px',
+                    border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+                    background: active ? 'var(--accent-l)' : 'transparent',
+                    color: active ? 'var(--accent-d)' : 'var(--text-m)',
+                  }}
+                  onClick={() => setSortKey(option.key)}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
           <div
             className="grid items-center gap-3 px-3 pb-2 text-[10px] font-extrabold uppercase"
             style={{

@@ -72,8 +72,8 @@ function toHotelSummary(row: HomePageRow): HotelSummary {
     occMesAnterior: 0,
     occMesAtual: row.occAtual,
     occMesQueVem: 0,
-    recDiariasMesAtual: 0,
-    ocupadosMesAtual: 0,
+    recDiariasMesAtual: row.recDiariasMesAtual,
+    ocupadosMesAtual: row.ocupadosMesAtual,
     cortesiaMesAtual: 0,
     hospedesMesAtual: 0,
     diasMesAtual: 0,
@@ -84,17 +84,17 @@ function toHotelSummary(row: HomePageRow): HotelSummary {
     occAnoAnterior: 0,
     ocupadosAnoAnterior: 0,
     receitaYTD: row.receitaPeriodo,
-    ocupadosYTD: 0,
+    ocupadosYTD: row.ocupadosMesAtual,
     hospedesYTD: 0,
     occAvgYTD: row.occAtual,
     dmYTD: row.dmAtual,
     latestDate: '--',
-    latestExtracao: '--',
+    latestExtracao: row.selectedDataExtracao || '--',
     latestOcc: row.occAtual,
     latestRevpar: row.revparAtual,
     latestDm: row.dmAtual,
     latestRecTotal: row.receitaMesAtual,
-    latestOcupados: 0,
+    latestOcupados: row.ocupadosMesAtual,
     status: deriveStatus(row.occAtual),
   };
 }
@@ -104,6 +104,8 @@ export default function Home() {
   const currentDate = localDateKey();
   const currentMonth = currentDate.slice(0, 7);
   const { rows, loading, error } = useHomePage(currentMonth, currentDate);
+  const selectedMonth = rows[0]?.selectedMesAno || currentMonth;
+  const selectedExtraction = rows[0]?.selectedDataExtracao || currentDate;
 
   const hotels = useMemo(() => rows.map(toHotelSummary), [rows]);
   const metas = useMemo<HotelMeta[]>(() => (
@@ -112,25 +114,25 @@ export default function Home() {
       .map(row => ({
         id: row.metaId ?? undefined,
         hotelId: row.hotelId,
-        mesAno: currentMonth,
+        mesAno: row.selectedMesAno || selectedMonth,
         receitaMeta: row.receitaMeta,
         occMeta: row.occMeta,
         dmMeta: row.dmMeta,
         revparMeta: null,
       }))
-  ), [currentMonth, rows]);
+  ), [rows, selectedMonth]);
   const pickupAlerts = useMemo<TodayPickupAlert[]>(() => (
     rows
       .filter(row => row.pickupAlteracoes > 0)
       .map(row => ({
         hotelId: row.hotelId,
-        dataExtracao: row.pickupDataExtracao ?? currentDate,
+        dataExtracao: row.pickupDataExtracao || row.selectedDataExtracao || selectedExtraction,
         alteracoes: row.pickupAlteracoes,
         pickupUhs: row.pickupUhs,
         pickupReceita: row.pickupReceita,
         referencias: row.pickupReferencias,
       }))
-  ), [currentDate, rows]);
+  ), [rows, selectedExtraction]);
   const portfolio = useMemo(() => aggregatePortfolio(hotels), [hotels]);
 
   const handleSelect = (hotelId: number) => navigate(`/clientes/${hotelId}`);
@@ -212,7 +214,7 @@ export default function Home() {
       </div>
 
       {/* ── Alertas + Top performers ── */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         <AlertCard
           alerts={pickupAlerts}
           hotels={hotels}
@@ -223,7 +225,7 @@ export default function Home() {
         <GoalAchievementCard
           hotels={hotels}
           metas={metas}
-          referenceMonth={currentMonth}
+          referenceMonth={selectedMonth}
           loading={false}
           onSelect={handleSelect}
         />

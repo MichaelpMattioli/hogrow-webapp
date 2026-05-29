@@ -694,6 +694,8 @@ export function useTodayPickupAlerts() {
 }
 
 export interface HomePageRow {
+  selectedMesAno: string;
+  selectedDataExtracao: string;
   hotelId: number;
   hotelNome: string;
   cidade: string | null;
@@ -704,6 +706,8 @@ export interface HomePageRow {
   revparAtual: number;
   dmAtual: number | null;
   receitaMesAtual: number;
+  ocupadosMesAtual: number;
+  recDiariasMesAtual: number;
   metaId: number | null;
   receitaMeta: number | null;
   occMeta: number | null;
@@ -726,6 +730,8 @@ function dateArray(value: unknown): string[] {
 
 function mapHomePageRow(row: Record<string, unknown>): HomePageRow {
   return {
+    selectedMesAno: (row.selected_mes_ano as string) ?? '',
+    selectedDataExtracao: (row.selected_data_extracao as string) ?? '',
     hotelId: num(row.hotel_id),
     hotelNome: (row.hotel_nome as string) ?? '',
     cidade: (row.cidade as string | null) ?? null,
@@ -736,6 +742,8 @@ function mapHomePageRow(row: Record<string, unknown>): HomePageRow {
     revparAtual: num(row.revpar_atual),
     dmAtual: nullableNum(row.dm_atual),
     receitaMesAtual: num(row.receita_mes_atual),
+    ocupadosMesAtual: num(row.ocupados_mes_atual),
+    recDiariasMesAtual: num(row.rec_diarias_mes_atual),
     metaId: nullableNum(row.meta_id),
     receitaMeta: nullableNum(row.receita_meta),
     occMeta: nullableNum(row.occ_meta),
