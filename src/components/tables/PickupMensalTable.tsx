@@ -154,51 +154,18 @@ function SummaryMetric({
   );
 }
 
-function PickupMensalSkeleton() {
+function PickupMensalSkeletonRows() {
   return (
     <>
-      <div style={{
-        background: 'var(--bg)',
-        borderBottom: '1px solid var(--border-l)',
-        display: 'flex',
-        overflowX: 'auto',
-      }}>
-        {Array.from({ length: 4 }, (_, index) => (
-          <div
-            key={index}
-            style={{
-              minWidth: 150,
-              padding: '10px 12px',
-              borderRight: '1px solid var(--border-l)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 9,
-            }}
-          >
-            <Skeleton width={28} height={28} radius="var(--rx)" />
-            <span style={{ minWidth: 0, flex: 1 }}>
-              <Skeleton width="70%" height={9} style={{ marginBottom: 6 }} />
-              <Skeleton width="88%" height={13} />
-            </span>
-          </div>
-        ))}
-      </div>
-
-      <div style={{ overflowX: 'auto', overflowY: 'hidden', maxHeight: 520 }}>
-        <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 3, fontSize: 12, minWidth: 980 }}>
-          <tbody>
-            {Array.from({ length: 12 }, (_, row) => (
-              <tr key={row}>
-                {Array.from({ length: 10 }, (_, col) => (
-                  <td key={col} style={{ padding: '8px 10px', background: col === 0 ? 'var(--surface)' : 'var(--bg)', border: '1px solid var(--border-l)' }}>
-                    <Skeleton height={16} radius={4} />
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {Array.from({ length: 12 }, (_, row) => (
+        <tr key={row}>
+          {Array.from({ length: 10 }, (_, col) => (
+            <td key={col} style={{ padding: '8px 10px', background: col === 0 ? 'var(--surface)' : 'var(--bg)', border: '1px solid var(--border-l)' }}>
+              <Skeleton height={16} radius={4} />
+            </td>
+          ))}
+        </tr>
+      ))}
     </>
   );
 }
@@ -340,7 +307,32 @@ export default function PickupMensalTable({ hotelId }: Props) {
       )}
 
       {loading ? (
-        <PickupMensalSkeleton />
+        <div style={{ overflowX: 'auto', overflowY: 'hidden', maxHeight: 520 }}>
+          <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 3, fontSize: 12, minWidth: 980 }}>
+            <thead>
+              <tr>
+                <th style={{ ...th, textAlign: 'left', minWidth: 94 }}>Mes</th>
+                <th style={{ ...th, textAlign: 'right' }}>Meta</th>
+                <th style={{ ...th, textAlign: 'right' }}>Real</th>
+                <th style={{ ...th, textAlign: 'right' }}>R x M</th>
+                <th style={{ ...th, textAlign: 'right' }}>%</th>
+                <th style={{ ...th, textAlign: 'right' }}>MoM</th>
+                <th style={{ ...th, textAlign: 'right' }}>Pickup R$</th>
+                <th style={{ ...th, textAlign: 'right' }}>Pickup UH</th>
+                <th style={{ ...th, textAlign: 'right' }}>Occ</th>
+                <th
+                  style={{ ...th, textAlign: 'center' }}
+                  title="Linhas do pick-up diário com alteração, considerando extração e referência dentro do mesmo mês."
+                >
+                  Alt. diárias
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <PickupMensalSkeletonRows />
+            </tbody>
+          </table>
+        </div>
       ) : error ? (
         <div style={{ padding: 32, textAlign: 'center', color: 'var(--red)', fontSize: 12, fontWeight: 700 }}>
           {error}

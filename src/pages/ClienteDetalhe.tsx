@@ -4,6 +4,7 @@ import { BedDouble, DollarSign, TrendingUp, BarChart3, ArrowLeft, MoreVertical, 
 import {
   updateHotel,
   useClienteDetalheCards,
+  useClienteDetalheCalendar,
   useClienteDetalheHeader,
   useClientePickupDiario,
   useClienteRateShopper,
@@ -158,15 +159,42 @@ export default function ClienteDetalhe() {
   const hotelId = Number(id);
   const mesAtual = localMonthKey();
   const [selectedMeses, setSelectedMeses] = useState<string[]>([mesAtual]);
+  const [selectedPosition, setSelectedPosition] = useState('');
   const [rateMonth, setRateMonth] = useState(mesAtual);
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const { hotel, summary, availableMonths: meses, loading, error, reload } = useClienteDetalheHeader(hotelId);
+  const { hotel, summary, loading, error, reload } = useClienteDetalheHeader(hotelId);
   const selectedMes = selectedMeses[0] ?? mesAtual;
-  const { cards, loading: cardsLoading, error: cardsError } = useClienteDetalheCards(hotelId, selectedMes);
-  const { rows: pickupRows, loading: pickupLoading, error: pickupError } = useClientePickupDiario(hotelId, selectedMes);
+  const {
+    calendar,
+    loading: calendarLoading,
+    error: calendarError,
+  } = useClienteDetalheCalendar(hotelId, selectedMes || null, selectedPosition || null);
+  const resolvedMes = calendar?.selectedMesAno ?? '';
+  const resolvedPosition = calendar?.selectedDataExtracao ?? '';
+  const calendarMatchesSelection = Boolean(
+    calendar &&
+    calendar.requestedMesAno === (selectedMes || '') &&
+    calendar.requestedDataExtracao === (selectedPosition || '')
+  );
+  const dataMes = selectedMes && selectedPosition
+    ? selectedMes
+    : calendarMatchesSelection
+      ? resolvedMes
+      : '';
+  const dataPosition = selectedMes && selectedPosition
+    ? selectedPosition
+    : calendarMatchesSelection
+      ? resolvedPosition
+      : '';
+  const availableMonths = useMemo(() => [...(calendar?.availableMonths ?? [])].sort(), [calendar]);
+  const availablePositionDates = useMemo(() => [...(calendar?.availableExtractionDates ?? [])].sort(), [calendar]);
+  const calendarMonth = selectedMes || resolvedMes || availableMonths[availableMonths.length - 1] || '';
+  const calendarPosition = selectedPosition || resolvedPosition || '';
+  const { cards, loading: cardsLoading, error: cardsError } = useClienteDetalheCards(hotelId, dataMes, dataPosition);
+  const { rows: pickupRows, loading: pickupLoading, error: pickupError } = useClientePickupDiario(hotelId, dataMes, dataPosition);
 
   const rateFrom = useMemo(() => {
     const monthStart = `${rateMonth}-01`;
@@ -202,9 +230,22 @@ export default function ClienteDetalhe() {
   }, [mesAtual]);
 
   useEffect(() => {
-    if (meses.length === 0 || meses.includes(selectedMes)) return;
-    handleMesesChange([meses[meses.length - 1]]);
-  }, [handleMesesChange, meses, selectedMes]);
+    if (calendarLoading || !calendar) return;
+    if (calendar.requestedMesAno !== (selectedMes || '')) return;
+    if (calendar.requestedDataExtracao !== (selectedPosition || '')) return;
+    if (calendar.selectedMesAno !== selectedMes) handleMesesChange([calendar.selectedMesAno]);
+    if (calendar.selectedDataExtracao !== selectedPosition) setSelectedPosition(calendar.selectedDataExtracao);
+  }, [calendar, calendarLoading, handleMesesChange, selectedMes, selectedPosition]);
+
+  const handlePositionSelect = useCallback((date: string) => {
+    if (availablePositionDates.length > 0 && !availablePositionDates.includes(date)) return;
+    setSelectedPosition(date);
+  }, [availablePositionDates]);
+
+  const handleCurrentMonthSelect = useCallback(() => {
+    handleMesesChange([mesAtual]);
+    setSelectedPosition('');
+  }, [handleMesesChange, mesAtual]);
 
   const fmtNumber = (v: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
   const fmtInt = (v: number) => Math.round(v).toLocaleString('pt-BR');
@@ -232,8 +273,8 @@ export default function ClienteDetalhe() {
   const latestSnapshot = summary.latestDate !== '-'
     ? ` - ${summary.latestOcupados}/${summary.uhs} UHs`
     : ` - ${summary.uhs} UHs`;
-  const cardsValueLoading = cardsLoading || !cards || cards.selectedMesAno !== selectedMes;
-  const cardReferenceMonth = cardsValueLoading ? selectedMes : cards.selectedMesAno;
+  const cardsValueLoading = calendarLoading || cardsLoading || !cards || cards.selectedMesAno !== dataMes || cards.selectedDataExtracao !== dataPosition;
+  const cardReferenceMonth = cardsValueLoading ? (dataMes || selectedMes) : cards.selectedMesAno;
   const loadingMeta: MetaData = { value: 1, formatted: '' };
 
   return (
@@ -265,11 +306,15 @@ export default function ClienteDetalhe() {
           </p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          {meses.length > 0 && (
+          {calendarMonth && (
             <HeaderMonthReference
-              selectedMonth={selectedMes}
-              availableMonths={meses}
+              selectedMonth={calendarMonth}
+              availableMonths={availableMonths}
               onSelect={month => handleMesesChange([month])}
+              selectedPosition={calendarPosition}
+              availablePositionDates={availablePositionDates}
+              onPositionSelect={handlePositionSelect}
+              onCurrentMonthSelect={handleCurrentMonthSelect}
             />
           )}
 
@@ -321,6 +366,10 @@ export default function ClienteDetalhe() {
           {cardsError ? (
             <div style={{ padding: 24, marginBottom: 24, textAlign: 'center', color: 'var(--red)', fontSize: 12, fontWeight: 700 }}>
               {cardsError}
+            </div>
+          ) : calendarError ? (
+            <div style={{ padding: 24, marginBottom: 24, textAlign: 'center', color: 'var(--red)', fontSize: 12, fontWeight: 700 }}>
+              {calendarError}
             </div>
           ) : (
             <>
@@ -388,11 +437,15 @@ export default function ClienteDetalhe() {
               hotelId={hotelId}
               pickupRows={pickupRows}
               selectedMeses={selectedMeses}
-              availableMeses={meses}
+              availableMeses={availableMonths}
               onReferenceChange={handleMesesChange}
+              selectedPosition={calendarPosition}
+              availablePositionDates={availablePositionDates}
+              onPositionChange={handlePositionSelect}
+              onCurrentMonthSelect={handleCurrentMonthSelect}
               shopperRates={pickupShopperRates}
-              loading={pickupLoading}
-              error={pickupError}
+              loading={calendarLoading || pickupLoading}
+              error={calendarError || pickupError}
             />
           </div>
 

@@ -865,9 +865,8 @@ export interface ClientesPageRow {
   estado: string | null;
   totalUhs: number;
   status: HotelSummary['status'];
-  availableMonths: string[];
   selectedMesAno: string;
-  selectedDataPosicao: string;
+  selectedDataExtracao: string;
   receitaMeta: number | null;
   receitaReal: number;
   receitaMetaPct: number | null;
@@ -885,6 +884,30 @@ export interface ClientesPageRow {
   revparReferencia: number;
 }
 
+export interface ClientesCalendarState {
+  requestedMesAno: string;
+  requestedDataExtracao: string;
+  selectedMesAno: string;
+  selectedDataExtracao: string;
+  availableMonths: string[];
+  availableExtractionDates: string[];
+}
+
+function mapClientesCalendarState(
+  row: Record<string, unknown>,
+  requestedMesAno: string,
+  requestedDataExtracao: string
+): ClientesCalendarState {
+  return {
+    requestedMesAno,
+    requestedDataExtracao,
+    selectedMesAno: (row.selected_mes_ano as string) ?? '',
+    selectedDataExtracao: (row.selected_data_extracao as string) ?? '',
+    availableMonths: dateArray(row.available_months),
+    availableExtractionDates: dateArray(row.available_extraction_dates),
+  };
+}
+
 function mapClientesPageRow(row: Record<string, unknown>): ClientesPageRow {
   return {
     hotelId: num(row.hotel_id),
@@ -893,9 +916,8 @@ function mapClientesPageRow(row: Record<string, unknown>): ClientesPageRow {
     estado: (row.estado as string | null) ?? null,
     totalUhs: num(row.total_uhs),
     status: (row.status as HotelSummary['status']) ?? 'critical',
-    availableMonths: (row.available_months as string[] | null) ?? [],
     selectedMesAno: (row.selected_mes_ano as string) ?? '',
-    selectedDataPosicao: (row.selected_data_posicao as string) ?? '',
+    selectedDataExtracao: (row.selected_data_extracao as string) ?? '',
     receitaMeta: nullableNum(row.receita_meta),
     receitaReal: num(row.receita_real),
     receitaMetaPct: nullableNum(row.receita_meta_pct),
@@ -914,15 +936,61 @@ function mapClientesPageRow(row: Record<string, unknown>): ClientesPageRow {
   };
 }
 
-export function useClientesPage(mesAno: string, dataPosicao: string) {
+export function useClientesCalendar(mesAno?: string | null, dataExtracao?: string | null) {
+  const [calendar, setCalendar] = useState<ClientesCalendarState | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      setLoading(true);
+      setError(null);
+      try {
+        const { data, error: err } = await supabase.rpc('rpc_clientes_calendar', {
+          p_mes_ano: mesAno || null,
+          p_data_extracao: dataExtracao || null,
+        });
+
+        if (err) throw err;
+        const row = Array.isArray(data) ? data[0] : data;
+        if (!cancelled) {
+          setCalendar(row
+            ? mapClientesCalendarState(row as Record<string, unknown>, mesAno || '', dataExtracao || '')
+            : null);
+        }
+      } catch (err: unknown) {
+        if (!cancelled) {
+          setCalendar(null);
+          setError(err instanceof Error ? err.message : 'Erro ao carregar calendario de clientes');
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    load();
+    return () => { cancelled = true; };
+  }, [mesAno, dataExtracao]);
+
+  return {
+    calendar,
+    loading,
+    error,
+  };
+}
+
+export function useClientesTable(mesAno?: string | null, dataExtracao?: string | null) {
   const [rows, setRows] = useState<ClientesPageRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!mesAno || !dataPosicao) {
+    if (!mesAno || !dataExtracao) {
       setRows([]);
       setLoading(false);
+      setError(null);
       return;
     }
 
@@ -938,9 +1006,9 @@ export function useClientesPage(mesAno: string, dataPosicao: string) {
       setLoading(true);
       setError(null);
       try {
-        const { data, error: err } = await supabase.rpc('rpc_clientes_page', {
+        const { data, error: err } = await supabase.rpc('rpc_clientes_table', {
           p_mes_ano: mesAno,
-          p_data_posicao: dataPosicao,
+          p_data_extracao: dataExtracao,
         });
 
         if (err) throw err;
@@ -960,7 +1028,7 @@ export function useClientesPage(mesAno: string, dataPosicao: string) {
 
     load();
     return () => { cancelled = true; };
-  }, [mesAno, dataPosicao]);
+  }, [mesAno, dataExtracao]);
 
   return { rows, loading, error };
 }
@@ -1047,6 +1115,79 @@ function mapClienteDetalheHeader(row: Record<string, unknown>): ClienteDetalheHe
   };
 }
 
+export interface ClienteDetalheCalendarState {
+  requestedMesAno: string;
+  requestedDataExtracao: string;
+  selectedMesAno: string;
+  selectedDataExtracao: string;
+  availableMonths: string[];
+  availableExtractionDates: string[];
+}
+
+function mapClienteDetalheCalendarState(
+  row: Record<string, unknown>,
+  requestedMesAno: string,
+  requestedDataExtracao: string
+): ClienteDetalheCalendarState {
+  return {
+    requestedMesAno,
+    requestedDataExtracao,
+    selectedMesAno: (row.selected_mes_ano as string) ?? '',
+    selectedDataExtracao: (row.selected_data_extracao as string) ?? '',
+    availableMonths: dateArray(row.available_months),
+    availableExtractionDates: dateArray(row.available_extraction_dates),
+  };
+}
+
+export function useClienteDetalheCalendar(hotelId: number, mesAno?: string | null, dataExtracao?: string | null) {
+  const [calendar, setCalendar] = useState<ClienteDetalheCalendarState | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!hotelId) {
+      setCalendar(null);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function load() {
+      setLoading(true);
+      setError(null);
+      try {
+        const { data, error: err } = await supabase.rpc('rpc_cliente_detalhe_calendar', {
+          p_hotel_id: hotelId,
+          p_mes_ano: mesAno || null,
+          p_data_extracao: dataExtracao || null,
+        });
+
+        if (err) throw err;
+        const row = Array.isArray(data) ? data[0] : data;
+        if (!cancelled) {
+          setCalendar(row
+            ? mapClienteDetalheCalendarState(row as Record<string, unknown>, mesAno || '', dataExtracao || '')
+            : null);
+        }
+      } catch (err: unknown) {
+        if (!cancelled) {
+          setCalendar(null);
+          setError(err instanceof Error ? err.message : 'Erro ao carregar calendario do cliente');
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    load();
+    return () => { cancelled = true; };
+  }, [dataExtracao, hotelId, mesAno]);
+
+  return { calendar, loading, error };
+}
+
 export function useClienteDetalheHeader(hotelId: number) {
   const [header, setHeader] = useState<ClienteDetalheHeader | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1102,6 +1243,7 @@ export function useClienteDetalheHeader(hotelId: number) {
 export interface ClienteDetalheCards {
   hotelId: number;
   selectedMesAno: string;
+  selectedDataExtracao: string;
   receitaAtual: number;
   occAtual: number;
   dmAtual: number;
@@ -1130,6 +1272,7 @@ function mapClienteDetalheCards(row: Record<string, unknown>): ClienteDetalheCar
   return {
     hotelId: num(row.hotel_id),
     selectedMesAno: String(row.selected_mes_ano ?? ''),
+    selectedDataExtracao: String(row.selected_data_extracao ?? ''),
     receitaAtual: num(row.receita_atual),
     occAtual: num(row.occ_atual),
     dmAtual: num(row.dm_atual),
@@ -1155,13 +1298,13 @@ function mapClienteDetalheCards(row: Record<string, unknown>): ClienteDetalheCar
   };
 }
 
-export function useClienteDetalheCards(hotelId: number, mesAno: string) {
+export function useClienteDetalheCards(hotelId: number, mesAno: string, dataExtracao?: string | null) {
   const [cards, setCards] = useState<ClienteDetalheCards | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!hotelId || !mesAno) {
+    if (!hotelId || !mesAno || !dataExtracao) {
       setCards(null);
       setLoading(false);
       return;
@@ -1176,6 +1319,7 @@ export function useClienteDetalheCards(hotelId: number, mesAno: string) {
         const { data, error: err } = await supabase.rpc('rpc_cliente_detalhe_cards', {
           p_hotel_id: hotelId,
           p_mes_ano: mesAno,
+          p_data_extracao: dataExtracao,
         });
 
         if (err) throw err;
@@ -1193,7 +1337,7 @@ export function useClienteDetalheCards(hotelId: number, mesAno: string) {
 
     load();
     return () => { cancelled = true; };
-  }, [hotelId, mesAno]);
+  }, [dataExtracao, hotelId, mesAno]);
 
   return { cards, loading, error };
 }
@@ -1221,13 +1365,13 @@ function mapClientePickupRow(row: Record<string, unknown>): PickupRow {
   };
 }
 
-export function useClientePickupDiario(hotelId: number, mesAno: string) {
+export function useClientePickupDiario(hotelId: number, mesAno: string, dataExtracao?: string | null) {
   const [rows, setRows] = useState<PickupRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!hotelId || !mesAno) {
+    if (!hotelId || !mesAno || !dataExtracao) {
       setRows([]);
       setLoading(false);
       return;
@@ -1247,6 +1391,7 @@ export function useClientePickupDiario(hotelId: number, mesAno: string) {
             .rpc('rpc_cliente_pickup_diario', {
               p_hotel_id: hotelId,
               p_mes_ano: mesAno,
+              p_data_extracao: dataExtracao,
             })
             .range(from, from + pageSize - 1);
 
@@ -1269,7 +1414,7 @@ export function useClientePickupDiario(hotelId: number, mesAno: string) {
 
     load();
     return () => { cancelled = true; };
-  }, [hotelId, mesAno]);
+  }, [dataExtracao, hotelId, mesAno]);
 
   return { rows, loading, error };
 }

@@ -19,8 +19,8 @@ Objetivo: cada tela deve ter uma fonte de dados clara, com contrato estavel, men
 | --- | --- | --- | --- |
 | Metas (`/metas`) | `public.rpc_metas_page(p_mes_ano text)` | Implementada localmente | Carregar hoteis clientes e metas do mes em uma unica chamada leve. |
 | Home (`/`) | `public.rpc_home_page(p_mes_ano text, p_data_extracao date)` | Implementada localmente | Carregar KPIs do portfolio, alertas de pick-up de hoje e atingimento de metas em uma unica chamada. |
-| Clientes (`/clientes`) | `public.rpc_clientes_page(p_mes_ano text)` + `public.mv_pickup_mensal_kpis` | Implementada localmente com MV mensal | Carregar ranking de clientes por mes de referencia, metas e acumulado anual em uma unica chamada sem recalcular pick-up mensal a cada load. |
-| Detalhamento Cliente (`/clientes/:id`) | `rpc_cliente_detalhe_header`, `rpc_cliente_detalhe_cards`, `rpc_cliente_pickup_diario`, `rpc_cliente_pickup_mensal`, `rpc_cliente_rate_shopper` + MVs nao-shopper | Implementada localmente com MVs no header/cards/pick-up | Separar header/cards de modulos pesados e evitar recalculo de pick-up diario/mensal a cada troca de mes. Shopper permanece live. |
+| Clientes (`/clientes`) | `public.rpc_clientes_calendar(p_mes_ano text, p_data_extracao date)` + `public.rpc_clientes_table(p_mes_ano text, p_data_extracao date)` + `public.mv_clientes_reference_calendar` | Implementada no frontend e Supabase | Separar calendario leve da tabela de clientes, usando apenas datas reais de extracao e os meses disponiveis em cada visao. |
+| Detalhamento Cliente (`/clientes/:id`) | `rpc_cliente_detalhe_header`, `rpc_cliente_detalhe_calendar`, `rpc_cliente_detalhe_cards`, `rpc_cliente_pickup_diario`, `rpc_cliente_pickup_mensal`, `rpc_cliente_rate_shopper` + MVs nao-shopper | Implementada com calendario de visao de extracao | Separar header/calendario/cards/pick-up, mantendo mes de referencia e data de extracao sincronizados entre topo e pick-up diario. Shopper permanece live. |
 
 ## Template Para Novas Telas
 
@@ -857,11 +857,209 @@ create index if not exists idx_mv_pickup_mensal_kpis_mes_hotel
   on public.mv_pickup_mensal_kpis (mes_ano, hotel_id);
 ```
 
-Apos carga de dados, refrescar a MV com `public.refresh_mv_pickup_mensal_kpis()` usando uma role de backend/servico. A RPC `public.rpc_clientes_page` deve continuar disponivel para `anon` e `authenticated`; o refresh da MV nao deve ser exposto ao frontend publico.
+Apos carga de dados, refrescar a MV com `public.refresh_mv_pickup_mensal_kpis()` usando uma role de backend/servico. Historico: este contrato v1 usava `public.rpc_clientes_page`; a versao atual da aba Clientes usa `public.rpc_clientes_calendar` e `public.rpc_clientes_table`.
+
+### Plano V2: Separar Calendario Da Tabela
+
+Status: implementado na migration `20260529194500_split_clientes_calendar_and_table.sql`. A RPC legada `rpc_clientes_page` foi removida na migration `20260529201500_drop_legacy_clientes_page_rpc.sql`; o frontend usa somente `rpc_clientes_calendar` e `rpc_clientes_table`. A `rpc_clientes_table` foi ajustada na migration `20260529203000_rpc_clientes_table_trusts_resolved_selection.sql` para nao chamar o calendario internamente.
+
+#### Diagnostico
+
+A aba Clientes mistura dois conceitos que precisam ficar independentes:
+
+| Conceito | Campo base | Semantica |
+| --- | --- | --- |
+| Dados do mes | `data_referencia` truncada para `YYYY-MM` | Mes visualizado na tabela. Pode conter historico, previsto, ou os dois. |
+| Visao da extracao | `data_extracao` | Snapshot real capturado em uma data. Define como os meses eram vistos naquele dia. |
+
+Exemplo esperado:
+
+- Se o usuario escolhe a visao `2026-05-26`, ele pode navegar por todos os meses de referencia capturados nessa extracao, como `2026-05`, `2026-06` ou meses futuros.
+- Se o usuario escolhe a visao `2026-05-01`, a navegacao de meses deve ficar limitada aos meses que existiam nessa extracao.
+- Trocar o mes de referencia nao deve alterar automaticamente a data da visao, exceto quando a extracao escolhida nao contem aquele mes.
+
+O contrato atual de `rpc_clientes_page(p_mes_ano, p_data_posicao)` consegue funcionar, mas obriga a RPC pesada da tabela a tambem resolver a navegacao do calendario. Isso aumenta payload, acoplamento e chance de regressao quando a UI so precisa saber quais meses e extracoes existem.
+
+#### Proposta
+
+Criar uma MV pequena, em grao normalizado `data_extracao + mes_ano`, para servir apenas o calendario da aba Clientes. A `data_extracao` precisa ser uma data real de captura, mas os meses disponiveis devem vir da visao mensal calculada naquela data (`data_posicao`), para permitir navegar tanto meses historicos quanto meses previstos sem reintroduzir datas geradas como `2026-05-28` e `2026-05-29`.
+
+Nome sugerido:
+
+```sql
+public.mv_clientes_reference_calendar
+```
+
+Grao:
+
+```text
+1 linha por data_extracao real + mes_ano disponivel na visao mensal calculada para essa data
+```
+
+Campos sugeridos:
+
+| Coluna | Tipo | Uso |
+| --- | --- | --- |
+| `data_extracao` | `date` | Data da visao selecionavel. |
+| `mes_ano` | `text` | Mes de referencia disponivel nessa visao. |
+| `mes_inicio` | `date` | Ordenacao e comparacoes. |
+| `hoteis_count` | `integer` | Diagnostico/cobertura da extracao. |
+| `referencias_count` | `integer` | Quantidade de datas de referencia cobertas. |
+| `min_data_referencia` | `date` | Diagnostico de cobertura. |
+| `max_data_referencia` | `date` | Diagnostico de cobertura. |
+
+SQL base:
+
+```sql
+create materialized view public.mv_clientes_reference_calendar as
+with real_extractions as (
+  select distinct
+    p.data_extracao::date as data_extracao
+  from public.mv_cliente_pickup_diario p
+  where p.data_extracao::date <= current_date
+)
+select
+  e.data_extracao,
+  k.mes_ano::text as mes_ano,
+  k.mes_inicio::date as mes_inicio,
+  count(distinct k.hotel_id)::integer as hoteis_count,
+  coalesce(sum(k.dias), 0)::integer as referencias_count,
+  k.mes_inicio::date as min_data_referencia,
+  (k.mes_inicio + interval '1 month - 1 day')::date as max_data_referencia
+from real_extractions e
+join public.mv_clientes_page_position_kpis k
+  on k.data_posicao = e.data_extracao
+where k.data_posicao <= current_date
+group by
+  e.data_extracao,
+  k.mes_ano,
+  k.mes_inicio
+with data;
+
+create unique index mv_clientes_reference_calendar_key
+  on public.mv_clientes_reference_calendar (data_extracao, mes_ano);
+
+create index idx_mv_clientes_reference_calendar_mes_extracao
+  on public.mv_clientes_reference_calendar (mes_ano, data_extracao);
+
+create index idx_mv_clientes_reference_calendar_extracao_mes
+  on public.mv_clientes_reference_calendar (data_extracao, mes_inicio);
+```
+
+#### RPC De Calendario
+
+Nome sugerido:
+
+```sql
+public.rpc_clientes_calendar(
+  p_mes_ano text default null,
+  p_data_extracao date default null
+)
+```
+
+Responsabilidade:
+
+- Resolver a selecao default.
+- Retornar meses disponiveis na visao calculada para a data de extracao selecionada, incluindo meses anteriores e posteriores ao mes atual quando existirem.
+- Retornar datas de extracao disponiveis para o mes de referencia selecionado.
+- Nao retornar metricas da tabela de clientes.
+
+Contrato sugerido:
+
+```sql
+returns table (
+  selected_mes_ano text,
+  selected_data_extracao date,
+  available_months text[],
+  available_extraction_dates date[]
+)
+```
+
+Regras:
+
+1. Se `p_data_extracao` vier nulo, usar a maior `data_extracao <= current_date`.
+2. Se `p_mes_ano` vier nulo, preferir `to_char(current_date, 'YYYY-MM')` se existir na extracao selecionada; caso contrario, usar o menor mes futuro da extracao; se nao houver futuro, usar o maior mes disponivel.
+3. Se o usuario trocar `p_mes_ano`, manter `p_data_extracao` quando essa extracao contem o mes escolhido.
+4. Se a extracao escolhida nao contem o mes escolhido, escolher a maior extracao que contenha o mes e seja menor ou igual a `p_data_extracao`; se nao houver, usar a maior extracao disponivel para o mes.
+
+#### RPC Da Tabela
+
+Nome sugerido:
+
+```sql
+public.rpc_clientes_table(
+  p_mes_ano text,
+  p_data_extracao date
+)
+```
+
+Responsabilidade:
+
+- Receber uma selecao ja resolvida pela RPC de calendario.
+- Retornar somente as linhas da tabela de clientes.
+- Nao retornar `available_months` nem `available_position_dates`.
+- Nao chamar `rpc_clientes_calendar` internamente; fallback e resolucao pertencem ao calendario.
+
+Retorno sugerido:
+
+| Coluna | Uso |
+| --- | --- |
+| `hotel_id`, `hotel_nome`, `cidade`, `estado`, `total_uhs`, `status` | Identidade e status |
+| `selected_mes_ano`, `selected_data_extracao` | Eco da selecao aplicada |
+| `receita_meta`, `receita_real`, `receita_meta_pct` | Meta vs real |
+| `receita_mes_anterior`, `receita_mom_abs`, `receita_mom_pct` | MoM na mesma data de extracao |
+| `receita_ano_anterior`, `receita_yoy_abs`, `receita_yoy_pct` | YoY na mesma data de extracao |
+| `receita_meta_ytd`, `receita_real_ytd`, `receita_delta_ytd` | Acumulado ate o mes selecionado na mesma data de extracao |
+| `occ_referencia`, `dm_referencia`, `revpar_referencia` | KPIs do mes |
+
+Regra importante: a mesma `p_data_extracao` deve ser usada para mes atual, mes anterior, YoY e YTD. A comparacao deve responder: "como esses meses estavam na visao capturada em X?", e nao "qual era a visao equivalente um mes/ano antes?".
+
+#### Fluxo Frontend
+
+1. Ao abrir `/clientes`, chamar `rpc_clientes_calendar(null, null)`.
+2. Guardar `selected_mes_ano` e `selected_data_extracao` vindos da RPC de calendario.
+3. Chamar `rpc_clientes_table(selected_mes_ano, selected_data_extracao)`.
+4. Ao trocar a data em "Visao da extracao", chamar `rpc_clientes_calendar(selected_mes_ano, nova_data_extracao)` e depois `rpc_clientes_table`.
+5. Ao trocar o mes em "Dados do mes", chamar `rpc_clientes_calendar(novo_mes_ano, selected_data_extracao)` e depois `rpc_clientes_table`.
+6. O componente de calendario deve receber dois conjuntos separados:
+   - `available_months`: meses disponiveis na extracao selecionada.
+   - `available_extraction_dates`: extracoes reais que contem o mes selecionado.
+
+#### Beneficios
+
+- O calendario passa a ser barato e semanticamente explicito.
+- A tabela deixa de carregar arrays repetidos em cada linha de hotel.
+- Evita confundir `data_posicao` gerada por MV com `data_extracao` real.
+- Facilita cache no frontend: calendario muda pouco e tabela muda por par `(mes_ano, data_extracao)`.
+- Reduz risco de bugs de sincronizacao entre mes de referencia e visao da extracao.
+
+#### Plano De Implementacao
+
+1. Criar `mv_clientes_reference_calendar`.
+2. Incluir a nova MV no refresh backend `refresh_cliente_detail_materialized_views()`.
+3. Criar `rpc_clientes_calendar(p_mes_ano, p_data_extracao)`.
+4. Criar `rpc_clientes_table(p_mes_ano, p_data_extracao)` copiando a parte de metricas da RPC atual e removendo os arrays de calendario.
+5. Atualizar `useClientesPage` para dois hooks:
+   - `useClientesCalendar(mesAno, dataExtracao)`
+   - `useClientesTable(mesAno, dataExtracao)`
+6. Ajustar `HeaderMonthReference` para tratar os dois seletores como independentes.
+7. Validar cenarios:
+   - `2026-05-26` permite navegar pelos meses historicos e previstos disponiveis na visao dessa data, incluindo `2026-04`, `2026-05` e `2026-06`.
+   - `2026-05-01` permite apenas meses existentes na visao calculada para essa data real de extracao.
+   - `2026-05-28` e `2026-05-29` nao aparecem se nao houver `data_extracao` real.
+   - Trocar de `2026-05` para `2026-06` preserva `2026-05-26` quando a extracao contem ambos.
+   - Trocar para um mes nao contido na extracao selecionada aplica fallback explicito pela RPC de calendario.
 
 ### Hook Frontend Sugerido
 
 ```ts
+export interface ClientesCalendarState {
+  selectedMesAno: string;
+  selectedDataExtracao: string;
+  availableMonths: string[];
+  availableExtractionDates: string[];
+}
+
 export interface ClientesPageRow {
   hotelId: number;
   hotelNome: string;
@@ -869,8 +1067,8 @@ export interface ClientesPageRow {
   estado: string | null;
   totalUhs: number;
   status: 'excellent' | 'healthy' | 'warning' | 'critical';
-  availableMonths: string[];
   selectedMesAno: string;
+  selectedDataExtracao: string;
   receitaMeta: number | null;
   receitaReal: number;
   receitaMetaPct: number | null;
@@ -888,9 +1086,28 @@ export interface ClientesPageRow {
   revparReferencia: number;
 }
 
-export async function fetchClientesPage(mesAno: string): Promise<ClientesPageRow[]> {
-  const { data, error } = await supabase.rpc('rpc_clientes_page', {
+export async function fetchClientesCalendar(mesAno: string | null, dataExtracao: string | null): Promise<ClientesCalendarState | null> {
+  const { data, error } = await supabase.rpc('rpc_clientes_calendar', {
     p_mes_ano: mesAno,
+    p_data_extracao: dataExtracao,
+  });
+
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) return null;
+
+  return {
+    selectedMesAno: row.selected_mes_ano as string,
+    selectedDataExtracao: row.selected_data_extracao as string,
+    availableMonths: (row.available_months as string[] | null) ?? [],
+    availableExtractionDates: (row.available_extraction_dates as string[] | null) ?? [],
+  };
+}
+
+export async function fetchClientesTable(mesAno: string, dataExtracao: string): Promise<ClientesPageRow[]> {
+  const { data, error } = await supabase.rpc('rpc_clientes_table', {
+    p_mes_ano: mesAno,
+    p_data_extracao: dataExtracao,
   });
 
   if (error) throw error;
@@ -902,8 +1119,8 @@ export async function fetchClientesPage(mesAno: string): Promise<ClientesPageRow
     estado: row.estado as string | null,
     totalUhs: row.total_uhs as number,
     status: row.status as ClientesPageRow['status'],
-    availableMonths: (row.available_months as string[] | null) ?? [],
     selectedMesAno: row.selected_mes_ano as string,
+    selectedDataExtracao: row.selected_data_extracao as string,
     receitaMeta: row.receita_meta as number | null,
     receitaReal: row.receita_real as number,
     receitaMetaPct: row.receita_meta_pct as number | null,
@@ -925,8 +1142,9 @@ export async function fetchClientesPage(mesAno: string): Promise<ClientesPageRow
 
 ### Uso Esperado Na Tela
 
-- Substituir `useHotels()`, `useHotelsMonthly()`, `useHotelMetas(selectedMonth)` e `useAllMetas()` por `useClientesPage(selectedMonth)`.
-- `availableMonths` pode ser lido da primeira linha retornada. Se nao houver linhas, usar `[currentMonth]`.
+- Substituir `useClientesPage(selectedMonth, selectedPosition)` por dois hooks: `useClientesCalendar(selectedMonth, selectedExtraction)` e `useClientesTable(calendar.selectedMesAno, calendar.selectedDataExtracao)`.
+- `availableMonths` vem somente da RPC de calendario e representa meses disponiveis na visao da extracao selecionada.
+- `availableExtractionDates` vem somente da RPC de calendario e representa datas reais de extracao que podem mostrar o mes selecionado.
 - Busca continua local por `hotelNome`, `cidade` e `estado`.
 - Ordenacao continua local usando os campos ja calculados pela RPC:
   - `meta`: `receitaMeta`
@@ -937,15 +1155,15 @@ export async function fetchClientesPage(mesAno: string): Promise<ClientesPageRow
   - `metaYtd`: `receitaMetaYtd`
   - `ytd`: `receitaRealYtd`
   - `deltaYtd`: `receitaDeltaYtd`
-- A tela deixa de reconstruir `HotelSummary` para cada mes; renderiza diretamente a linha retornada pela RPC.
+- A tela nao usa mais arrays repetidos em cada linha da tabela para controlar o calendario.
 
 ### Ganho Esperado
 
-- Reduz quatro hooks/carregamentos para uma RPC por mes selecionado.
+- Reduz o calendario para uma RPC leve e deixa a tabela em uma RPC focada nos dados dos clientes.
 - Evita buscar todo o historico mensal quando a tela precisa somente do mes selecionado, mes anterior, YoY e YTD.
 - Evita buscar todas as metas no cliente apenas para somar o acumulado do ano.
 - Move agregacoes pesadas para o banco, onde indices e plano de execucao ajudam mais.
-- Mantem busca, ordenacao e toggle inteiro/abreviado no frontend sem novas consultas.
+- Mantem busca, ordenacao e toggle inteiro/abreviado no frontend sem consultas adicionais.
 
 ## RPC Proposta: Detalhamento Cliente v2
 
@@ -971,9 +1189,10 @@ Implementacao local:
 
 | Modulo | RPC | Quando carregar | Motivo |
 | --- | --- | --- | --- |
-| Header | `public.rpc_cliente_detalhe_header(p_hotel_id bigint)` | Ao abrir a pagina | Le em `mv_cliente_detalhe_latest_daily` para meses disponiveis, ultimo snapshot e status. |
-| Cards | `public.rpc_cliente_detalhe_cards(p_hotel_id bigint, p_mes_ano text)` | Ao abrir e ao trocar mes | Le em `mv_cliente_detalhe_monthly_kpis` para KPIs do mes, YoY, YTD e metas do mes. |
-| Pick-up diario | `public.rpc_cliente_pickup_diario(p_hotel_id bigint, p_mes_ano text)` | Ao abrir aba/bloco de pick-up diario | Le em `mv_cliente_pickup_diario`; o hook pagina a RPC para receber meses com mais de 1000 linhas. |
+| Header | `public.rpc_cliente_detalhe_header(p_hotel_id bigint)` | Ao abrir a pagina | Le em `mv_cliente_detalhe_latest_daily` para identidade, ultimo snapshot e status. |
+| Calendario | `public.rpc_cliente_detalhe_calendar(p_hotel_id bigint, p_mes_ano text, p_data_extracao date)` | Ao abrir e ao trocar mes/data | Resolve meses de referencia disponiveis na visao e datas reais de extracao disponiveis para o mes. |
+| Cards | `public.rpc_cliente_detalhe_cards(p_hotel_id bigint, p_mes_ano text, p_data_extracao date)` | Ao abrir e ao trocar mes/data | Le em `mv_clientes_page_position_kpis` usando a mesma data de extracao selecionada. |
+| Pick-up diario | `public.rpc_cliente_pickup_diario(p_hotel_id bigint, p_mes_ano text, p_data_extracao date)` | Ao abrir bloco de pick-up diario e ao trocar mes/data | Monta a visao diaria do mes na data de extracao selecionada, comparando contra a visao anterior. |
 | Pick-up mensal | `public.rpc_cliente_pickup_mensal(p_hotel_id bigint, p_ano integer)` | Ao abrir visao mensal ou trocar ano | Le em `mv_pickup_mensal_kpis` e usa `mv_cliente_pickup_diario` para o contador de alteracoes diarias. |
 | Shopper | `public.rpc_cliente_rate_shopper(p_hotel_id bigint, p_mes_ano text, p_from date, p_keep_latest boolean)` | Ao abrir calendario ou para meses do pick-up | Restringe tarifas por mes e opcionalmente mantem apenas a ultima coleta. |
 
@@ -1022,12 +1241,37 @@ Retorno: uma linha por hotel cliente.
 | `latest_ocupados` | `numeric` | Ocupacao atual |
 | `latest_total_uhs` | `numeric` | Denominador do header |
 
+### Contrato: Calendario
+
+Nome:
+
+```sql
+public.rpc_cliente_detalhe_calendar(
+  p_hotel_id bigint,
+  p_mes_ano text default null,
+  p_data_extracao date default null
+)
+```
+
+Retorno: uma linha com a selecao resolvida.
+
+| Coluna | Tipo sugerido | Uso |
+| --- | --- | --- |
+| `selected_mes_ano` | `text` | Mes de referencia aplicado |
+| `selected_data_extracao` | `date` | Data real da visao de extracao aplicada |
+| `available_months` | `text[]` | Meses disponiveis na visao selecionada |
+| `available_extraction_dates` | `date[]` | Datas reais de extracao que contem o mes selecionado |
+
 ### Contrato: Cards
 
 Nome:
 
 ```sql
-public.rpc_cliente_detalhe_cards(p_hotel_id bigint, p_mes_ano text default null)
+public.rpc_cliente_detalhe_cards(
+  p_hotel_id bigint,
+  p_mes_ano text default null,
+  p_data_extracao date default null
+)
 ```
 
 Retorno: uma linha por hotel/mes.
@@ -1036,6 +1280,7 @@ Retorno: uma linha por hotel/mes.
 | --- | --- | --- |
 | `hotel_id` | `bigint` | Key |
 | `selected_mes_ano` | `text` | Mes aplicado |
+| `selected_data_extracao` | `date` | Visao da extracao aplicada |
 | `receita_atual`, `occ_atual`, `dm_atual`, `revpar_atual` | `numeric` | Cards principais |
 | `room_nights_atual`, `hospedes_atual` | `numeric` | Cards secundarios |
 | `receita_prev_year`, `occ_prev_year`, `dm_prev_year`, `revpar_prev_year` | `numeric` | Comparacao YoY |
@@ -1049,7 +1294,11 @@ Retorno: uma linha por hotel/mes.
 Nome:
 
 ```sql
-public.rpc_cliente_pickup_diario(p_hotel_id bigint, p_mes_ano text)
+public.rpc_cliente_pickup_diario(
+  p_hotel_id bigint,
+  p_mes_ano text,
+  p_data_extracao date default null
+)
 ```
 
 Retorno: apenas as colunas usadas por `PickupTable`.
@@ -1067,8 +1316,10 @@ Retorno: apenas as colunas usadas por `PickupTable`.
 Filtro esperado:
 
 - `data_referencia` dentro de `p_mes_ano`.
-- `data_extracao` nao deve ser limitada pelo mes de referencia. Meses fechados podem ter snapshots finais ou ajustes em extracoes posteriores, e a UI precisa conseguir selecionar essas extracoes.
-- Ordenar por `data_extracao`, `data_referencia`.
+- `data_extracao` e a data real da visao selecionada.
+- Para cada diaria, usar o ultimo snapshot conhecido ate `p_data_extracao`.
+- Calcular pick-up contra a visao de extracao imediatamente anterior do hotel.
+- Ordenar por `data_referencia`.
 
 ### Contrato: Pick-up Mensal
 
@@ -1157,13 +1408,13 @@ Apos carga de dados, refrescar as MVs nao-shopper com `public.refresh_cliente_de
 
 ### Uso Esperado Na Tela
 
-- Substituir `useHotelDetail(id)` por `useClienteDetalheHeader(id)` + `useClienteDetalheCards(id, selectedMes)`.
+- Substituir `useHotelDetail(id)` por `useClienteDetalheHeader(id)` + `useClienteDetalheCalendar(id, selectedMes, selectedDataExtracao)` + `useClienteDetalheCards(id, resolvedMes, resolvedDataExtracao)`.
 - Manter `updateHotel(id, data)` direto em `hotel` por enquanto.
 - Substituir `useHotelMetas(metaMes)` no detalhe pelo retorno da RPC de cards.
-- Substituir `usePickup(id)` por `useClientePickupDiario(id, selectedMes)`.
+- Substituir `usePickup(id)` por `useClientePickupDiario(id, resolvedMes, resolvedDataExtracao)`.
 - Substituir `usePickupMensalKpis(id, ano)` por `useClientePickupMensal(id, ano)`.
 - Substituir `useBookingRates` e `useBookingRatesForMonths` por `useClienteRateShopper`.
-- Fazer lazy load de pick-up e shopper por bloco/aba, com cache por `hotelId + mesAno` ou `hotelId + ano`.
+- O `HeaderMonthReference` do topo e o seletor dentro do pick-up diario compartilham o mesmo estado de mes de referencia e data de extracao.
 
 ### Ganho Esperado
 

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
 import { localDateKey } from '@/lib/utils';
 
 const MES_PT = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
@@ -39,7 +39,9 @@ interface HeaderMonthReferenceProps {
   availableMonths: string[];
   onSelect: (month: string) => void;
   selectedPosition?: string;
+  availablePositionDates?: string[];
   onPositionSelect?: (date: string) => void;
+  onCurrentMonthSelect?: () => void;
 }
 
 export default function HeaderMonthReference({
@@ -47,13 +49,24 @@ export default function HeaderMonthReference({
   availableMonths,
   onSelect,
   selectedPosition,
+  availablePositionDates,
   onPositionSelect,
+  onCurrentMonthSelect,
 }: HeaderMonthReferenceProps) {
   const [open, setOpen] = useState(false);
   const [year, setYear] = useState(() => Number(selectedMonth.slice(0, 4)));
+  const [positionMonth, setPositionMonth] = useState(() => (selectedPosition || selectedMonth).slice(0, 7));
   const ref = useRef<HTMLDivElement>(null);
+  const today = localDateKey();
+  const currentMonth = today.slice(0, 7);
   const months = useMemo(() => [...new Set(availableMonths)].sort(), [availableMonths]);
   const availSet = useMemo(() => new Set(months), [months]);
+  const currentMonthAvailable = availSet.has(currentMonth);
+  const canSelectCurrentMonth = Boolean(onCurrentMonthSelect) || currentMonthAvailable;
+  const positionMonths = useMemo(
+    () => [...new Set((availablePositionDates ?? []).map(date => date.slice(0, 7)))].sort(),
+    [availablePositionDates]
+  );
   const availableYears = useMemo(
     () => [...new Set(months.map(ym => Number(ym.slice(0, 4))))].sort((a, b) => a - b),
     [months]
@@ -61,8 +74,16 @@ export default function HeaderMonthReference({
   const activeIndex = months.indexOf(selectedMonth);
   const prevMonth = activeIndex > 0 ? months[activeIndex - 1] : null;
   const nextMonth = activeIndex >= 0 && activeIndex < months.length - 1 ? months[activeIndex + 1] : null;
-  const selectedCalendar = useMemo(() => calendarDays(selectedMonth), [selectedMonth]);
-  const today = localDateKey();
+  const positionCalendar = useMemo(() => calendarDays(positionMonth), [positionMonth]);
+  const positionSet = useMemo(
+    () => availablePositionDates ? new Set(availablePositionDates) : null,
+    [availablePositionDates]
+  );
+  const positionMonthIndex = positionMonths.indexOf(positionMonth);
+  const prevPositionMonth = positionMonthIndex > 0 ? positionMonths[positionMonthIndex - 1] : null;
+  const nextPositionMonth = positionMonthIndex >= 0 && positionMonthIndex < positionMonths.length - 1
+    ? positionMonths[positionMonthIndex + 1]
+    : null;
   const prevYear = useMemo(
     () => [...availableYears].reverse().find(y => y < year) ?? null,
     [availableYears, year]
@@ -75,6 +96,19 @@ export default function HeaderMonthReference({
   useEffect(() => {
     setYear(Number(selectedMonth.slice(0, 4)));
   }, [selectedMonth]);
+
+  useEffect(() => {
+    if (selectedPosition) {
+      setPositionMonth(selectedPosition.slice(0, 7));
+    }
+  }, [selectedPosition]);
+
+  useEffect(() => {
+    if (selectedPosition || positionMonths.length === 0) return;
+    setPositionMonth(current => positionMonths.includes(current)
+      ? current
+      : positionMonths[positionMonths.length - 1]);
+  }, [positionMonths, selectedPosition]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -106,6 +140,16 @@ export default function HeaderMonthReference({
 
   const selectPosition = (date: string) => {
     onPositionSelect?.(date);
+    setOpen(false);
+  };
+
+  const selectCurrentMonth = () => {
+    if (!canSelectCurrentMonth) return;
+    if (onCurrentMonthSelect) {
+      onCurrentMonthSelect();
+    } else {
+      onSelect(currentMonth);
+    }
     setOpen(false);
   };
 
@@ -144,7 +188,7 @@ export default function HeaderMonthReference({
         }}
       >
         <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: 0.6, color: 'var(--accent)', marginBottom: 3 }}>
-          MÊS DE REFERÊNCIA
+          DADOS DO MÊS
         </div>
         <div style={{
           fontSize: 20,
@@ -162,7 +206,7 @@ export default function HeaderMonthReference({
         </div>
         {selectedPosition && (
           <div style={{ marginTop: 2, fontSize: 10.5, fontWeight: 850, color: 'var(--accent)', whiteSpace: 'nowrap' }}>
-            Visão em {fmtDateBR(selectedPosition)}
+            Extração em {fmtDateBR(selectedPosition)}
           </div>
         )}
       </button>
@@ -190,6 +234,36 @@ export default function HeaderMonthReference({
           boxShadow: 'var(--sh-m)',
           padding: 14,
         }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
+            <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: 0.6, color: 'var(--accent)', textTransform: 'uppercase' }}>
+              Dados do mês
+            </div>
+            <button
+              type="button"
+              onClick={selectCurrentMonth}
+              disabled={!canSelectCurrentMonth}
+              title="Selecionar mês atual e última extração"
+              aria-label="Selecionar mês atual e última extração"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                minHeight: 24,
+                padding: '3px 7px',
+                borderRadius: 'var(--rx)',
+                border: '1px solid var(--border)',
+                background: selectedMonth === currentMonth ? 'var(--accent-l)' : 'var(--surface)',
+                color: canSelectCurrentMonth ? 'var(--text)' : 'var(--text-m)',
+                opacity: canSelectCurrentMonth ? 1 : 0.4,
+                cursor: canSelectCurrentMonth ? 'pointer' : 'default',
+                fontSize: 10.5,
+                fontWeight: 800,
+              }}
+            >
+              <CalendarDays size={12} />
+              Mês atual
+            </button>
+          </div>
           <div className="flex items-center justify-between mb-3">
             <button
               onClick={() => prevYear != null && setYear(prevYear)}
@@ -256,10 +330,51 @@ export default function HeaderMonthReference({
               <div style={{ height: 1, background: 'var(--border-l)', margin: '13px 0 11px' }} />
               <div style={{ marginBottom: 8 }}>
                 <div style={{ fontSize: 9, fontWeight: 900, letterSpacing: 0.6, color: 'var(--accent)', textTransform: 'uppercase' }}>
-                  Referência da visão
+                  Visão da extração
                 </div>
                 <div style={{ marginTop: 2, fontSize: 11, fontWeight: 650, color: 'var(--text-m)' }}>
-                  {selectedPosition ? fmtDateBR(selectedPosition) : 'Selecione uma data'}
+                  {selectedPosition ? `Extração em ${fmtDateBR(selectedPosition)}` : 'Selecione uma data'}
+                </div>
+                <div style={{ marginTop: 7, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                  <button
+                    onClick={() => prevPositionMonth && setPositionMonth(prevPositionMonth)}
+                    disabled={!prevPositionMonth}
+                    style={{
+                      width: 26,
+                      height: 24,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderRadius: 'var(--rx)',
+                      color: 'var(--text-m)',
+                      opacity: prevPositionMonth ? 1 : 0.35,
+                      cursor: prevPositionMonth ? 'pointer' : 'default',
+                    }}
+                    className="hover:bg-[var(--surface-h)]"
+                  >
+                    <ChevronLeft size={13} />
+                  </button>
+                  <span style={{ textAlign: 'center', fontSize: 11, fontWeight: 800, color: 'var(--text)' }}>
+                    {MES_PT[Number(positionMonth.slice(5, 7)) - 1] ?? positionMonth.slice(5, 7)}/{positionMonth.slice(0, 4)}
+                  </span>
+                  <button
+                    onClick={() => nextPositionMonth && setPositionMonth(nextPositionMonth)}
+                    disabled={!nextPositionMonth}
+                    style={{
+                      width: 26,
+                      height: 24,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderRadius: 'var(--rx)',
+                      color: 'var(--text-m)',
+                      opacity: nextPositionMonth ? 1 : 0.35,
+                      cursor: nextPositionMonth ? 'pointer' : 'default',
+                    }}
+                    className="hover:bg-[var(--surface-h)]"
+                  >
+                    <ChevronRight size={13} />
+                  </button>
                 </div>
               </div>
 
@@ -272,13 +387,13 @@ export default function HeaderMonthReference({
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
-                {selectedCalendar.blanks.map((_, index) => (
+                {positionCalendar.blanks.map((_, index) => (
                   <span key={`blank-${index}`} />
                 ))}
-                {selectedCalendar.days.map(date => {
+                {positionCalendar.days.map(date => {
                   const day = Number(date.slice(-2));
                   const selected = selectedPosition === date;
-                  const disabled = date > today;
+                  const disabled = date > today || Boolean(positionSet && !positionSet.has(date));
                   return (
                     <button
                       key={date}

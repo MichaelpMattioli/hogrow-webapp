@@ -1,9 +1,9 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useClientesPage, type ClientesPageRow, type MonthlyKpi } from '@/hooks/useSupabase';
+import { useClientesCalendar, useClientesTable, type ClientesPageRow, type MonthlyKpi } from '@/hooks/useSupabase';
 import { ChevronUp, ChevronDown, TrendingUp, TrendingDown, Minus, ChevronsUpDown, Hash } from 'lucide-react';
 import type { HotelSummary, HotelMeta } from '@/data/types';
-import { localDateKey, STATUS_CONFIG } from '@/lib/utils';
+import { STATUS_CONFIG } from '@/lib/utils';
 import { deriveStatus } from '@/data/transforms';
 import HeaderMonthReference from '@/components/ui/HeaderMonthReference';
 
@@ -47,20 +47,6 @@ function monthElapsedRatio(referenceMonth = currentMesAno()): number {
 function currentMesAno() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-}
-
-function monthEndDateKey(ym: string) {
-  const [year, month] = ym.split('-').map(Number);
-  const lastDay = new Date(year, month, 0).getDate();
-  return `${ym}-${String(lastDay).padStart(2, '0')}`;
-}
-
-function defaultPositionForMonth(ym: string) {
-  const today = localDateKey();
-  const monthStart = `${ym}-01`;
-  const monthEnd = monthEndDateKey(ym);
-  if (today < monthStart) return monthStart;
-  return today < monthEnd ? today : monthEnd;
 }
 
 const MES_LABELS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
@@ -642,35 +628,72 @@ export default function Clientes() {
   const [sortDir, setSortDir]     = useState<SortDir>('desc');
   const [fullNumbers, setFull]    = useState(true);
   const [selectedMonth, setSelectedMonth] = useState(() => currentMesAno());
-  const [selectedPosition, setSelectedPosition] = useState(() => defaultPositionForMonth(currentMesAno()));
+  const [selectedPosition, setSelectedPosition] = useState('');
   const navigate      = useNavigate();
   const [searchParams] = useSearchParams();
   const q = (searchParams.get('q') ?? '').toLowerCase().trim();
 
-  const { rows, loading, error } = useClientesPage(selectedMonth, selectedPosition);
+  const {
+    calendar,
+    loading: calendarLoading,
+    error: calendarError,
+  } = useClientesCalendar(selectedMonth || null, selectedPosition || null);
+  const resolvedMonth = calendar?.selectedMesAno ?? '';
+  const resolvedPosition = calendar?.selectedDataExtracao ?? '';
+  const calendarMatchesSelection = Boolean(
+    calendar &&
+    calendar.requestedMesAno === (selectedMonth || '') &&
+    calendar.requestedDataExtracao === (selectedPosition || '')
+  );
+  const tableMonth = selectedMonth && selectedPosition
+    ? selectedMonth
+    : calendarMatchesSelection
+      ? resolvedMonth
+      : '';
+  const tablePosition = selectedMonth && selectedPosition
+    ? selectedPosition
+    : calendarMatchesSelection
+      ? resolvedPosition
+      : '';
+  const {
+    rows,
+    loading: tableLoading,
+    error: tableError,
+  } = useClientesTable(tableMonth || null, tablePosition || null);
+  const error = calendarError || tableError;
 
   const availableMonths = useMemo(() => {
-    const months = [...new Set(rows.flatMap(row => row.availableMonths))];
-    const current = currentMesAno();
-    if (!months.includes(current)) months.push(current);
-    return months.sort();
-  }, [rows]);
+    return [...(calendar?.availableMonths ?? [])].sort();
+  }, [calendar]);
+
+  const availablePositionDates = useMemo(() => {
+    return [...(calendar?.availableExtractionDates ?? [])].sort();
+  }, [calendar]);
+
+  const calendarMonth = selectedMonth || resolvedMonth || availableMonths[availableMonths.length - 1] || '';
+  const calendarPosition = selectedPosition || resolvedPosition || '';
 
   const handleReferenceMonthSelect = (month: string) => {
     setSelectedMonth(month);
-    setSelectedPosition(defaultPositionForMonth(month));
   };
 
   const handlePositionSelect = (date: string) => {
-    if (!date.startsWith(`${selectedMonth}-`)) return;
+    if (availablePositionDates.length > 0 && !availablePositionDates.includes(date)) return;
     setSelectedPosition(date);
   };
 
+  const handleCurrentMonthSelect = () => {
+    setSelectedMonth(currentMesAno());
+    setSelectedPosition('');
+  };
+
   useEffect(() => {
-    if (availableMonths.length === 0 || availableMonths.includes(selectedMonth)) return;
-    const current = currentMesAno();
-    handleReferenceMonthSelect(availableMonths.includes(current) ? current : availableMonths[availableMonths.length - 1]);
-  }, [availableMonths, selectedMonth]);
+    if (calendarLoading || !calendar) return;
+    if (calendar.requestedMesAno !== (selectedMonth || '')) return;
+    if (calendar.requestedDataExtracao !== (selectedPosition || '')) return;
+    if (calendar.selectedMesAno !== selectedMonth) setSelectedMonth(calendar.selectedMesAno);
+    if (calendar.selectedDataExtracao !== selectedPosition) setSelectedPosition(calendar.selectedDataExtracao);
+  }, [calendar, calendarLoading, selectedMonth, selectedPosition]);
 
   const referenceHotels = useMemo(
     () => rows.map(clientesRowToHotel),
@@ -729,13 +752,14 @@ export default function Clientes() {
   }, [filtered, sortCol, sortDir, metaMap, annualMetaMap]);
 
   const shProps = { active: sortCol, dir: sortDir, onSort: handleSort };
-  const rowsReferenceMonth = rows[0]?.selectedMesAno;
-  const rowsPositionDate = rows[0]?.selectedDataPosicao;
   const hasStaleRows = Boolean(
-    (rowsReferenceMonth && rowsReferenceMonth !== selectedMonth) ||
-    (rowsPositionDate && rowsPositionDate !== selectedPosition)
+    !tableMonth ||
+    !tablePosition ||
+    !calendarMatchesSelection ||
+    (rows[0]?.selectedMesAno && rows[0].selectedMesAno !== tableMonth) ||
+    (rows[0]?.selectedDataExtracao && rows[0].selectedDataExtracao !== tablePosition)
   );
-  const isTableLoading = loading || hasStaleRows;
+  const isTableLoading = !error && (calendarLoading || tableLoading || hasStaleRows);
 
   return (
     <div className="fade-in">
@@ -750,13 +774,17 @@ export default function Clientes() {
           </p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          <HeaderMonthReference
-            selectedMonth={selectedMonth}
-            availableMonths={availableMonths}
-            onSelect={handleReferenceMonthSelect}
-            selectedPosition={selectedPosition}
-            onPositionSelect={handlePositionSelect}
-          />
+          {calendarMonth && (
+            <HeaderMonthReference
+              selectedMonth={calendarMonth}
+              availableMonths={availableMonths}
+              onSelect={handleReferenceMonthSelect}
+              selectedPosition={calendarPosition}
+              availablePositionDates={availablePositionDates}
+              onPositionSelect={handlePositionSelect}
+              onCurrentMonthSelect={handleCurrentMonthSelect}
+            />
+          )}
 
           {/* Full / abbreviated toggle */}
           <button

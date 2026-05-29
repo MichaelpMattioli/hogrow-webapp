@@ -2,6 +2,7 @@ import { useMemo, useState, useRef, useEffect } from 'react';
 import { CalendarDays, ChevronLeft, ChevronRight, Filter, Hash } from 'lucide-react';
 import type { BookingRate, PickupRow } from '@/data/types';
 import { Skeleton } from '@/components/ui/Skeleton';
+import HeaderMonthReference from '@/components/ui/HeaderMonthReference';
 
 // ─── Formatting helpers ───────────────────────────────────────────────
 
@@ -40,7 +41,7 @@ function fmtYearMonthTitle(ym: string) {
 }
 
 function fmtReferenceRange(months: string[]) {
-  if (months.length === 0) return 'sem datas na referência';
+  if (months.length === 0) return 'sem datas de diária';
 
   const sorted = [...months].sort();
   const first = sorted[0];
@@ -53,7 +54,7 @@ function fmtReferenceRange(months: string[]) {
 }
 
 function fmtReferencePeriod(months: string[]) {
-  if (months.length === 0) return 'sem referência';
+  if (months.length === 0) return 'sem diárias';
   if (months.length <= 3) return months.map(fmtYearMonth).join(', ');
   return `${fmtYearMonth(months[0])} a ${fmtYearMonth(months[months.length - 1])} (${months.length} meses)`;
 }
@@ -76,6 +77,47 @@ const DIAS_PT = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
 const MES_PT  = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 const MES_PT_FULL = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
+const stayAxis = {
+  soft: 'var(--accent-l)',
+  surface: '#F7F8FC',
+  border: '#CAD2E8',
+  text: 'var(--accent-d)',
+  strong: 'var(--accent)',
+};
+
+const extractionAxis = {
+  soft: '#F0EDE8',
+  surface: '#FAF7F3',
+  border: '#D6C8BA',
+  text: '#6F5D4B',
+  strong: '#9A7657',
+};
+
+const changedAxis = {
+  soft: 'var(--green-l)',
+  border: '#A7F3D0',
+  text: 'var(--green)',
+  selected: 'var(--green)',
+};
+
+const axisPanel = (axis: typeof stayAxis): React.CSSProperties => ({
+  minWidth: 0,
+  padding: '13px 14px',
+  borderRadius: 'var(--r)',
+  border: `1px solid ${axis.border}`,
+  borderLeft: `4px solid ${axis.strong}`,
+  background: axis.surface,
+});
+
+const axisLabel = (axis: typeof stayAxis): React.CSSProperties => ({
+  fontSize: 10,
+  fontWeight: 900,
+  letterSpacing: 0.6,
+  color: axis.text,
+  marginBottom: 8,
+  textTransform: 'uppercase',
+});
+
 // ─── Extraction date calendar ─────────────────────────────────────────
 
 interface ExtracaoCalendarProps {
@@ -90,17 +132,12 @@ function ExtracaoCalendar({ available, changed, selected, onSelect }: ExtracaoCa
   const ref = useRef<HTMLDivElement>(null);
   const changedSet = useMemo(() => new Set(changed), [changed]);
   const basePalette = {
-    soft: 'var(--accent-l)',
-    border: 'color-mix(in srgb,var(--accent) 30%,transparent)',
-    text: 'var(--accent-d)',
-    selected: 'var(--accent)',
+    soft: extractionAxis.soft,
+    border: extractionAxis.border,
+    text: extractionAxis.text,
+    selected: extractionAxis.strong,
   };
-  const changedPalette = {
-    soft: '#F0EDE8',
-    border: '#D6C8BA',
-    text: '#6F5D4B',
-    selected: '#9A7657',
-  };
+  const changedPalette = changedAxis;
 
   // Default calendar month: month of the selected or most recent available
   const initialYM = useMemo(() => {
@@ -159,14 +196,14 @@ function ExtracaoCalendar({ available, changed, selected, onSelect }: ExtracaoCa
         className="flex items-center gap-2 transition-all"
         style={{
           padding:'6px 12px', borderRadius:'var(--rx)',
-          background: open ? 'var(--accent-l)' : 'var(--bg)',
-          border:`1px solid ${open ? 'var(--accent)' : 'var(--border)'}`,
-          color: open ? 'var(--accent-d)' : 'var(--text)',
+          background: open ? extractionAxis.soft : 'var(--bg)',
+          border:`1px solid ${open ? extractionAxis.strong : 'var(--border)'}`,
+          color: open ? extractionAxis.text : 'var(--text)',
           fontSize:12, fontWeight:600,
         }}
       >
-        <CalendarDays size={13} style={{ color: open ? 'var(--accent)' : 'var(--text-m)' }}/>
-        Extração: {labelSelected}
+        <CalendarDays size={13} style={{ color: open ? extractionAxis.strong : 'var(--text-m)' }}/>
+        Data de extração: {labelSelected}
         <ChevronRight size={12} style={{ color:'var(--text-m)', transform: open ? 'rotate(90deg)' : 'none', transition:'transform .15s' }}/>
       </button>
 
@@ -230,7 +267,7 @@ function ExtracaoCalendar({ available, changed, selected, onSelect }: ExtracaoCa
                   key={dateStr}
                   disabled={!hasData}
                   onClick={() => { onSelect(dateStr); setOpen(false); }}
-                  title={hasData ? `Extração de ${fmt(dateStr)}` : undefined}
+                  title={hasData ? `Extração dos dados em ${fmt(dateStr)}` : undefined}
                   style={{
                     padding:'5px 2px', borderRadius:6, textAlign:'center',
                     fontSize:11.5, fontWeight: hasData ? (isSel ? 800 : 700) : 400,
@@ -252,7 +289,7 @@ function ExtracaoCalendar({ available, changed, selected, onSelect }: ExtracaoCa
           {available.length > 0 && (
             <div style={{ marginTop:10, paddingTop:10, borderTop:'1px solid var(--border-l)' }}>
               <p style={{ fontSize:9.5, fontWeight:700, color:'var(--text-m)', textTransform:'uppercase', letterSpacing:'0.4px', marginBottom:6 }}>
-                Extrações disponíveis
+                Datas de extração disponíveis
               </p>
               <div style={{ display:'flex', flexWrap:'wrap', gap:4 }}>
                 {[...available].reverse().map(d => (
@@ -288,7 +325,12 @@ interface PickupTableProps {
   selectedMonths: string[];
   availableMonths: string[];
   onReferenceChange: (months: string[]) => void;
+  selectedPosition?: string;
+  availablePositionDates?: string[];
+  onPositionChange?: (date: string) => void;
+  onCurrentMonthSelect?: () => void;
   shopperRates: BookingRate[];
+  loading?: boolean;
 }
 
 const cell = (extra?: React.CSSProperties): React.CSSProperties => ({
@@ -296,16 +338,26 @@ const cell = (extra?: React.CSSProperties): React.CSSProperties => ({
   fontFamily: 'var(--mono)', whiteSpace: 'nowrap', ...extra,
 });
 const thPu: React.CSSProperties = {
-  padding:'6px 7px', fontSize:'9px', fontWeight:600, color:'var(--accent)',
-  letterSpacing:'0.3px', borderBottom:'2px solid var(--border)', whiteSpace:'nowrap', textAlign:'left',
+  padding:'6px 7px', fontSize:'9px', fontWeight:600, color:'var(--green)',
+  letterSpacing:'0.3px', borderBottom:'2px solid #A7F3D0', whiteSpace:'nowrap', textAlign:'left',
 };
-const thSnap: React.CSSProperties = { ...thPu, color:'var(--text-m)' };
+const thSnap: React.CSSProperties = { ...thPu, color: extractionAxis.text, borderBottom: `2px solid ${extractionAxis.border}` };
 const thShopper: React.CSSProperties = {
   ...thPu,
   color: 'var(--accent-d)',
   background: 'var(--accent-l)',
   textAlign: 'right',
   borderBottom: '2px solid var(--accent)',
+};
+const thGroup: React.CSSProperties = {
+  padding: '7px',
+  fontSize: 9,
+  fontWeight: 850,
+  letterSpacing: '0.04em',
+  textTransform: 'uppercase',
+  borderBottom: '1px solid var(--border-l)',
+  whiteSpace: 'nowrap',
+  textAlign: 'center',
 };
 
 type ShopperPaxPrices = Record<1 | 2 | 3 | 4, number | null>;
@@ -333,7 +385,12 @@ export default function PickupTable({
   selectedMonths,
   availableMonths,
   onReferenceChange,
+  selectedPosition,
+  availablePositionDates,
+  onPositionChange,
+  onCurrentMonthSelect,
   shopperRates,
+  loading = false,
 }: PickupTableProps) {
   const validData = useMemo(
     () => data.filter(r => Boolean(r.data_extracao && r.data_referencia)),
@@ -398,11 +455,20 @@ export default function PickupTable({
   // Filter: only rows with changes
   const [onlyChanged, setOnlyChanged] = useState(false);
   const [wholeValues, setWholeValues] = useState(false);
-  const calendarExtracoes = allExtracoes;
+  const calendarExtracoes = useMemo(() => {
+    const source = availablePositionDates && availablePositionDates.length > 0
+      ? availablePositionDates
+      : allExtracoes;
+    return [...new Set(source)].sort();
+  }, [allExtracoes, availablePositionDates]);
   const defaultExtracao = calendarExtracoes.length > 0 ? calendarExtracoes[calendarExtracoes.length - 1] : null;
-  const activeExtracao = selectedExtracao && calendarExtracoes.includes(selectedExtracao)
+  const controlledExtracao = selectedPosition && calendarExtracoes.includes(selectedPosition)
+    ? selectedPosition
+    : null;
+  const activeExtracao = controlledExtracao
+    ?? (selectedExtracao && calendarExtracoes.includes(selectedExtracao)
     ? selectedExtracao
-    : defaultExtracao;
+    : defaultExtracao);
 
   useEffect(() => {
     if (activeExtracao === settledExtracao) return;
@@ -454,14 +520,21 @@ export default function PickupTable({
   }, [monthFilteredRows, activeExtracao, onlyChanged]);
 
   const hasPickup = filtered.some(r => r.data_extracao_ant !== null);
+  const isTableLoading = loading || isExtracaoLoading;
 
   const fmtRef = fmtFullDate;
   const selectReference = (month: string | null) => {
     if (!month) return;
     onReferenceChange([month]);
-    setSelectedExtracao(null);
+    if (!onPositionChange) setSelectedExtracao(null);
   };
-  const selectExtracao = (date: string) => setSelectedExtracao(date);
+  const selectExtracao = (date: string) => {
+    if (onPositionChange) {
+      onPositionChange(date);
+      return;
+    }
+    setSelectedExtracao(date);
+  };
 
   return (
     <div className="card-in" style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:'var(--r)', padding:'20px', animationDelay:'0.2s' }}>
@@ -470,20 +543,26 @@ export default function PickupTable({
         <div style={{ minWidth: 180 }}>
           <h3 className="text-sm font-semibold" style={{ letterSpacing:'-0.2px' }}>Pick-Up Diário</h3>
           <p className="text-[11.5px] mt-0.5" style={{ color:'var(--text-m)' }}>
-            {isExtracaoLoading ? (
-              <Skeleton width={190} height={10} />
-            ) : (
-              <>
-                {filtered.length} datas na tabela
-                {hasPickup
-                  ? ` · comparação com extração anterior`
-                  : ' · sem extração anterior (sem pick-up)'}
-              </>
-            )}
+            {filtered.length} datas na tabela
+            {hasPickup
+              ? ` · comparação com extração anterior`
+              : ' · sem extração anterior (sem pick-up)'}
           </p>
         </div>
 
         <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap', justifyContent:'flex-end' }}>
+          {activeReferenceMonth && (
+            <HeaderMonthReference
+              selectedMonth={activeReferenceMonth}
+              availableMonths={availableReferenceMonths}
+              onSelect={month => selectReference(month)}
+              selectedPosition={activeExtracao ?? undefined}
+              availablePositionDates={calendarExtracoes}
+              onPositionSelect={selectExtracao}
+              onCurrentMonthSelect={onCurrentMonthSelect}
+            />
+          )}
+
           <button
             onClick={() => setWholeValues(v => !v)}
             title="Arredondar valores da tabela"
@@ -528,28 +607,67 @@ export default function PickupTable({
       </div>
 
       <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        flexWrap: 'wrap',
+        padding: '9px 11px',
+        marginBottom: 12,
+        borderRadius: 'var(--rx)',
+        border: '1px solid var(--border-l)',
+        background: 'var(--bg)',
+        fontSize: 11.5,
+        fontWeight: 650,
+        color: 'var(--text-m)',
+      }}>
+        <span style={{
+          color: stayAxis.text,
+          background: stayAxis.soft,
+          border: `1px solid ${stayAxis.border}`,
+          borderRadius: 999,
+          padding: '2px 8px',
+          fontWeight: 850,
+        }}>
+          Diárias de {referenceTitle}
+        </span>
+        <span>vistas na</span>
+        <span style={{
+          color: extractionAxis.text,
+          background: extractionAxis.soft,
+          border: `1px solid ${extractionAxis.border}`,
+          borderRadius: 999,
+          padding: '2px 8px',
+          fontWeight: 850,
+        }}>
+          extração de {activeExtracao ? fmtFullDate(activeExtracao) : '--'}
+        </span>
+        <span style={{ color: 'var(--text-m)' }}>
+          {prevExtracao ? `Pick-up vs ${fmtFullDate(prevExtracao)}` : 'sem extração anterior'}
+        </span>
+      </div>
+
+      <div style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-        gap: 18,
-        padding: '14px 0 16px',
+        gap: 14,
+        padding: '0 0 16px',
         marginBottom: 14,
-        borderTop: '1px solid var(--border-l)',
         borderBottom: '1px solid var(--border-l)',
       }}>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 10, fontWeight: 900, letterSpacing: 0.6, color: 'var(--accent)', marginBottom: 6 }}>
-            MÊS DE REFERÊNCIA
+        <div style={axisPanel(stayAxis)}>
+          <div style={axisLabel(stayAxis)}>
+            MÊS DAS DIÁRIAS
           </div>
           <div style={{ display:'grid', gridTemplateColumns:'34px minmax(0,1fr) 34px', alignItems:'center', gap:10 }}>
             <button
               onClick={() => selectReference(prevReference)}
               disabled={!prevReference}
-              title="Referência anterior"
-              aria-label="Referência anterior"
+              title="Mês das diárias anterior"
+              aria-label="Mês das diárias anterior"
               style={{
                 width:34, height:34, display:'flex', alignItems:'center', justifyContent:'center',
-                borderRadius:'var(--rx)', border:'1px solid var(--border)',
-                background:'var(--surface)', color:'var(--text-m)',
+                borderRadius:'var(--rx)', border:`1px solid ${stayAxis.border}`,
+                background:'var(--surface)', color: stayAxis.text,
                 opacity: prevReference ? 1 : 0.35,
                 cursor: prevReference ? 'pointer' : 'default',
               }}
@@ -562,7 +680,7 @@ export default function PickupTable({
                 fontSize: 30,
                 lineHeight: 1.05,
                 fontWeight: 900,
-                color: 'var(--text)',
+                color: stayAxis.text,
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
@@ -577,12 +695,12 @@ export default function PickupTable({
             <button
               onClick={() => selectReference(nextReference)}
               disabled={!nextReference}
-              title="Próxima referência"
-              aria-label="Próxima referência"
+              title="Próximo mês das diárias"
+              aria-label="Próximo mês das diárias"
               style={{
                 width:34, height:34, display:'flex', alignItems:'center', justifyContent:'center',
-                borderRadius:'var(--rx)', border:'1px solid var(--border)',
-                background:'var(--surface)', color:'var(--text-m)',
+                borderRadius:'var(--rx)', border:`1px solid ${stayAxis.border}`,
+                background:'var(--surface)', color: stayAxis.text,
                 opacity: nextReference ? 1 : 0.35,
                 cursor: nextReference ? 'pointer' : 'default',
               }}
@@ -592,21 +710,21 @@ export default function PickupTable({
           </div>
         </div>
 
-        <div style={{ minWidth: 0, alignSelf:'center' }}>
-          <div style={{ fontSize: 10, fontWeight: 850, letterSpacing: 0.5, color: 'var(--text-m)', marginBottom: 8 }}>
-            EXTRAÇÃO DA REFERÊNCIA
+        <div style={axisPanel(extractionAxis)}>
+          <div style={axisLabel(extractionAxis)}>
+            EXTRAÇÃO DOS DADOS
           </div>
           {calendarExtracoes.length > 0 ? (
             <div style={{ display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
               <button
                 onClick={() => prevExtracao && selectExtracao(prevExtracao)}
                 disabled={!prevExtracao}
-                title="Extração anterior"
-                aria-label="Extração anterior"
+                title="Extração dos dados anterior"
+                aria-label="Extração dos dados anterior"
                 style={{
                   width:28, height:28, display:'flex', alignItems:'center', justifyContent:'center',
-                  borderRadius:'var(--rx)', border:'1px solid var(--border)',
-                  background:'var(--bg)', color:'var(--text-m)',
+                  borderRadius:'var(--rx)', border:`1px solid ${extractionAxis.border}`,
+                  background:'var(--surface)', color: extractionAxis.text,
                   opacity: prevExtracao ? 1 : 0.35,
                   cursor: prevExtracao ? 'pointer' : 'default',
                 }}
@@ -624,12 +742,12 @@ export default function PickupTable({
               <button
                 onClick={() => nextExtracao && selectExtracao(nextExtracao)}
                 disabled={!nextExtracao}
-                title="Próxima extração"
-                aria-label="Próxima extração"
+                title="Próxima extração dos dados"
+                aria-label="Próxima extração dos dados"
                 style={{
                   width:28, height:28, display:'flex', alignItems:'center', justifyContent:'center',
-                  borderRadius:'var(--rx)', border:'1px solid var(--border)',
-                  background:'var(--bg)', color:'var(--text-m)',
+                  borderRadius:'var(--rx)', border:`1px solid ${extractionAxis.border}`,
+                  background:'var(--surface)', color: extractionAxis.text,
                   opacity: nextExtracao ? 1 : 0.35,
                   cursor: nextExtracao ? 'pointer' : 'default',
                 }}
@@ -640,7 +758,7 @@ export default function PickupTable({
                 <span style={{
                   fontSize: 12,
                   fontWeight: 800,
-                  color: 'var(--text)',
+                  color: extractionAxis.text,
                   marginLeft: 4,
                 }}>
                   {fmtFullDate(activeExtracao)}
@@ -663,7 +781,7 @@ export default function PickupTable({
             </button>
           )}
           <div style={{ marginTop: 7, fontSize: 11.5, color: 'var(--text-m)', fontWeight: 600 }}>
-            {hasPickup ? 'Dia da extração usado para calcular o pick-up desta referência.' : 'Sem extração anterior para comparar nesta referência.'}
+            {hasPickup ? 'Retrato capturado nessa data para calcular o pick-up das diárias.' : 'Sem extração anterior para comparar essas diárias.'}
           </div>
         </div>
       </div>
@@ -673,7 +791,13 @@ export default function PickupTable({
         <table className="w-full" style={{ borderCollapse:'collapse', fontSize:'11px' }}>
           <thead className="sticky top-0" style={{ background:'var(--surface)' }}>
             <tr>
-              <th style={thSnap}>DATA REFERÊNCIA</th>
+              <th style={{ ...thGroup, color: stayAxis.text, background: stayAxis.soft }} colSpan={1}>Diária</th>
+              <th style={{ ...thGroup, color: 'var(--green)', background: 'var(--green-l)' }} colSpan={5}>Pick-up vs extração anterior</th>
+              <th style={{ ...thGroup, color: extractionAxis.text, background: extractionAxis.soft }} colSpan={8}>Retrato na extração selecionada</th>
+              <th style={{ ...thGroup, color: 'var(--accent-d)', background: 'var(--accent-l)' }} colSpan={4}>Shopper</th>
+            </tr>
+            <tr>
+              <th style={{ ...thSnap, color: stayAxis.text }}>DATA DA DIÁRIA</th>
               <th style={thPu}>TT UH</th>
               <th style={thPu}>REC HOSP</th>
               <th style={thPu}>DM TT</th>
@@ -694,7 +818,7 @@ export default function PickupTable({
             </tr>
           </thead>
           <tbody>
-            {isExtracaoLoading ? (
+            {isTableLoading ? (
               <PickupTableSkeletonRows />
             ) : filtered.length === 0 ? (
               <tr>
