@@ -456,6 +456,7 @@ export default function ClienteDetalhe() {
               loading={ratesLoading}
               yearMonth={rateMonth}
               onMonthChange={setRateMonth}
+              hotelId={hotelId}
             />
           </div>
         </>

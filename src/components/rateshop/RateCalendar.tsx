@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
-import { AlertTriangle, ChevronLeft, ChevronRight, X, RefreshCw, CalendarDays, Table2, Download, Users } from 'lucide-react';
+import { AlertTriangle, ChevronLeft, ChevronRight, X, RefreshCw, CalendarDays, Table2, Download, Users, Loader2 } from 'lucide-react';
 import type { BookingRate, RateDaySummary } from '@/data/types';
 import { localDateKey } from '@/lib/utils';
+import { useShopperRun } from '@/hooks/useShopperRun';
 import RateDayModal from './RateDayModal';
 
 // ─── Constants ────────────────────────────────────────────────────────
@@ -26,6 +27,14 @@ function dateOnly(value: string | null | undefined) {
 function fmtDateOnly(value: string) {
   const [, month, day] = value.split('-');
   return `${day}/${month}`;
+}
+
+function fmtCountdown(ms: number) {
+  const s = Math.ceil(ms / 1000);
+  const h = Math.floor(s / 3600);
+  const mm = Math.floor((s % 3600) / 60);
+  const ss = s % 60;
+  return h > 0 ? `${h}h${String(mm).padStart(2, '0')}` : `${mm}:${String(ss).padStart(2, '0')}`;
 }
 
 function pctBgBorder(pct: number | null) {
@@ -383,9 +392,10 @@ interface RateCalendarProps {
   loading: boolean;
   yearMonth: string;
   onMonthChange: (ym: string) => void;
+  hotelId: number;
 }
 
-export default function RateCalendar({ rates, loading, yearMonth, onMonthChange }: RateCalendarProps) {
+export default function RateCalendar({ rates, loading, yearMonth, onMonthChange, hotelId }: RateCalendarProps) {
   const today = localDateKey();
   const visibleRates = useMemo(
     () => rates.filter(r => r.checkinDate >= today),
@@ -422,7 +432,8 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange 
 
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [view, setView]                 = useState<ViewMode>('calendar');
-  const [refreshRequested, setRefreshRequested] = useState(false);
+  const shopper = useShopperRun(hotelId);
+  const [nowTick, setNowTick] = useState(() => Date.now());
 
   const containerRef    = useRef<HTMLDivElement>(null);
   const [modalAnchorTop, setModalAnchorTop] = useState(0);
@@ -465,9 +476,12 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange 
   const lastScrapedDate = dateOnly(lastScrapedAt);
   const shopperNeedsUpdate = Boolean(lastScrapedDate && lastScrapedDate < today);
 
+  // Tica o relógio (1s) enquanto há atualização rodando ou cooldown, p/ o contador.
   useEffect(() => {
-    setRefreshRequested(false);
-  }, [lastScrapedDate, today]);
+    if (!shopper.isActive && !shopper.cooldownUntil) return;
+    const iv = setInterval(() => setNowTick(Date.now()), 1000);
+    return () => clearInterval(iv);
+  }, [shopper.isActive, shopper.cooldownUntil]);
 
   const fmtScraped = (iso: string) => {
     const d = new Date(iso);
@@ -479,9 +493,9 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange 
   const prevMonth = () => { const pm=m===1?12:m-1; const py=m===1?y-1:y; onMonthChange(`${py}-${String(pm).padStart(2,'0')}`); };
   const nextMonth = () => { const nm=m===12?1:m+1;  const ny=m===12?y+1:y; onMonthChange(`${ny}-${String(nm).padStart(2,'0')}`); };
 
-  const requestShopperUpdate = () => {
-    setRefreshRequested(true);
-  };
+  const cooldownLeftMs = shopper.cooldownUntil ? Math.max(0, shopper.cooldownUntil - nowTick) : 0;
+  const updateDisabled = shopper.isActive || cooldownLeftMs > 0 || shopper.dailyLimited;
+  const shopperPct = shopper.run?.progress_pct != null ? Math.round(Number(shopper.run.progress_pct)) : null;
 
   const selectedDayRates = selectedDate ? visibleRates.filter(r => r.checkinDate === selectedDate) : [];
   const hasAnyData = visibleRates.length > 0;
@@ -529,26 +543,46 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange 
                   </span>
                 </div>
 
-                {shopperNeedsUpdate && (
-                  <button
-                    type="button"
-                    onClick={requestShopperUpdate}
-                    title="Solicitação de atualização em desenvolvimento"
-                  style={{
-                    display:'flex', alignItems:'center', gap:5,
-                    padding:'5px 9px', borderRadius:'var(--rx)',
-                    border:'1px solid var(--border)',
-                    background: refreshRequested ? 'var(--green-l)' : 'var(--surface)',
-                    color: refreshRequested ? 'var(--green)' : 'var(--accent)',
-                    fontSize:10.5, fontWeight:750,
-                    cursor:'pointer',
-                  }}
-                >
-                    <RefreshCw size={10} />
-                    {refreshRequested ? 'Em desenvolvimento' : 'Atualizar (em dev)'}
-                  </button>
-                )}
               </div>
+            )}
+
+            {/* Atualizar agora (on-demand): dispara o rate-shopper deste hotel */}
+            <button
+              type="button"
+              onClick={() => { if (!updateDisabled) void shopper.trigger(); }}
+              disabled={updateDisabled}
+              aria-label="Atualizar preços do rate shopper agora"
+              title={
+                shopper.isActive ? 'Buscando preços atualizados…'
+                : cooldownLeftMs > 0 ? `Disponível em ${fmtCountdown(cooldownLeftMs)}`
+                : shopper.dailyLimited ? 'Limite de 3 atualizações por dia atingido'
+                : 'Buscar preços atualizados do Booking agora'
+              }
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '5px 10px', borderRadius: 'var(--rx)',
+                border: '1px solid var(--border)',
+                background: shopper.isActive ? 'rgba(var(--accent-rgb),0.08)' : 'var(--surface)',
+                color: updateDisabled ? 'var(--text-m)' : 'var(--accent)',
+                fontSize: 10.5, fontWeight: 750, whiteSpace: 'nowrap',
+                cursor: updateDisabled ? 'not-allowed' : 'pointer',
+                opacity: (updateDisabled && !shopper.isActive) ? 0.75 : 1,
+              }}
+            >
+              {shopper.isActive ? (
+                <><Loader2 size={11} className="animate-spin" /> Atualizando{shopperPct != null ? ` ${shopperPct}%` : '…'}</>
+              ) : cooldownLeftMs > 0 ? (
+                <><RefreshCw size={10} /> Em {fmtCountdown(cooldownLeftMs)}</>
+              ) : shopper.dailyLimited ? (
+                <><AlertTriangle size={10} /> Limite diário</>
+              ) : (
+                <><RefreshCw size={10} /> Atualizar agora</>
+              )}
+            </button>
+            {(shopper.run?.status === 'error' || (shopper.rejection?.reason.startsWith('erro'))) && (
+              <span title={shopper.run?.error_msg ?? ''} style={{ fontSize: 10, color: 'var(--red)', fontWeight: 600 }}>
+                falhou — tente de novo
+              </span>
             )}
 
             {/* Month nav */}
