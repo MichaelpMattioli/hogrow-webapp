@@ -105,6 +105,8 @@ export default function HotelEditForm({ hotel, onSave }: HotelEditFormProps) {
           </div>
           {feedback && (
             <span
+              role="status"
+              aria-live="polite"
               className="inline-flex items-center gap-1.5 rounded-full text-[11.5px] font-semibold transition-all duration-300"
               style={{
                 padding: '5px 14px',
@@ -156,6 +158,9 @@ export default function HotelEditForm({ hotel, onSave }: HotelEditFormProps) {
                     </div>
                     <button
                       type="button"
+                      role="switch"
+                      aria-checked={isOn}
+                      aria-label={field.label}
                       onClick={() => handleChange(field.key, !isOn)}
                       className="transition-colors duration-200"
                       style={{ color: isOn ? 'var(--green)' : 'var(--text-m)' }}
@@ -169,12 +174,13 @@ export default function HotelEditForm({ hotel, onSave }: HotelEditFormProps) {
 
             return (
               <div key={field.key}>
-                <label className="flex items-center gap-1.5 text-[11.5px] font-medium mb-1.5" style={{ color: 'var(--text-m)' }}>
+                <label htmlFor={String(field.key)} className="flex items-center gap-1.5 text-[11.5px] font-medium mb-1.5" style={{ color: 'var(--text-m)' }}>
                   <IconComp size={12} />
                   {field.label}
                   {field.required && <span style={{ color: 'var(--red)' }}>*</span>}
                 </label>
                 <input
+                  id={String(field.key)}
                   type={field.type}
                   value={value == null ? '' : String(value)}
                   placeholder={field.placeholder}

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ArrowUpDown, Bell, ChevronRight, Loader2, Search, X } from 'lucide-react';
+import { Bell, ChevronRight, Loader2, Search, X } from 'lucide-react';
 import type { HotelSummary } from '@/data/types';
 import type { TodayPickupAlert } from '@/hooks/useSupabase';
 
@@ -170,7 +170,14 @@ export default function AlertCard({ alerts, hotels, loading = false, error = nul
                 <button
                   key={key}
                   type="button"
-                  onClick={() => setSortKey(key)}
+                  onClick={() => {
+                    if (sortKey === key) {
+                      setSortDir(d => d === 'desc' ? 'asc' : 'desc');
+                    } else {
+                      setSortKey(key);
+                      setSortDir('desc');
+                    }
+                  }}
                   className="transition-colors duration-150"
                   style={{
                     height: 28,
@@ -181,29 +188,20 @@ export default function AlertCard({ alerts, hotels, loading = false, error = nul
                     color: active ? 'var(--accent-d)' : 'var(--text-m)',
                     fontSize: 11,
                     fontWeight: 800,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
                   }}
                 >
                   {SORT_LABELS[key]}
+                  {active && (
+                    <span style={{ fontSize: 10, lineHeight: 1 }}>
+                      {sortDir === 'desc' ? '↓' : '↑'}
+                    </span>
+                  )}
                 </button>
               );
             })}
-            <button
-              type="button"
-              onClick={() => setSortDir(dir => dir === 'desc' ? 'asc' : 'desc')}
-              title={sortDir === 'desc' ? 'Maior para menor' : 'Menor para maior'}
-              aria-label="Alternar direção da ordenação"
-              className="flex items-center justify-center transition-colors duration-150"
-              style={{
-                width: 30,
-                height: 28,
-                borderRadius: 'var(--rx)',
-                border: '1px solid var(--border)',
-                background: 'transparent',
-                color: 'var(--text-m)',
-              }}
-            >
-              <ArrowUpDown size={13} />
-            </button>
           </div>
         </div>
       )}

@@ -17,6 +17,7 @@ export function Skeleton({
 }: SkeletonProps) {
   return (
     <span
+      aria-hidden="true"
       className={['skeleton-shimmer', className].filter(Boolean).join(' ')}
       style={{
         display: 'block',

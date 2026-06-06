@@ -1,5 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
+import { queryClient } from '@/lib/queryClient';
 import { localDateKey } from '@/lib/utils';
 import { buildHotelSummary, parseKpiRow, deriveStatus } from '@/data/transforms';
 import type { HotelRow, ReceitaDiariaRow, KpiDiario, HotelSummary, PickupRow, BookingRate, HotelMeta } from '@/data/types';
@@ -10,6 +12,21 @@ function sleep(ms: number) {
   return new Promise<void>(resolve => setTimeout(resolve, ms));
 }
 
+function num(value: unknown): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function nullableNum(value: unknown): number | null {
+  if (value == null) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function errMsg(error: unknown): string | null {
+  return error instanceof Error ? error.message : null;
+}
+
 async function fetchClientHotelIds(): Promise<number[]> {
   const { data, error } = await supabase
     .from('hotel')
@@ -18,6 +35,19 @@ async function fetchClientHotelIds(): Promise<number[]> {
 
   if (error) throw error;
   return ((data ?? []) as Array<{ id: number }>).map(r => r.id);
+}
+
+/**
+ * Shared, deduplicated access to the client hotel ids. Many hooks need this list;
+ * routing every call through one cached query means the underlying request runs
+ * once per session instead of N times in parallel.
+ */
+function getClientHotelIds(): Promise<number[]> {
+  return queryClient.fetchQuery({
+    queryKey: ['client-hotel-ids'],
+    queryFn: fetchClientHotelIds,
+    staleTime: Infinity,
+  });
 }
 
 function isPickupExtractionAllowed(dataExtracao: string | null | undefined, dataReferencia: string | null | undefined): boolean {
@@ -91,147 +121,119 @@ async function fetchBookingRatesRange(hotelId: number, from: string, to: string,
 // ─── Fetch all hotels via pre-aggregated view ────────────────────────
 
 export function useHotels() {
-  const [hotels, setHotels] = useState<HotelSummary[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['hotels-summary'],
+    queryFn: async (): Promise<HotelSummary[]> => {
+      const clientIds = await getClientHotelIds();
+      if (clientIds.length === 0) return [];
 
-  useEffect(() => {
-    async function load() {
-      setLoading(true);
-      try {
-        const clientIds = await fetchClientHotelIds();
+      const { data, error } = await supabase
+        .from('vw_hotel_summary')
+        .select('*')
+        .in('id', clientIds);
 
-        if (clientIds.length === 0) {
-          setHotels([]);
-          return;
-        }
+      if (error) throw error;
 
-        const { data, error: err } = await supabase
-          .from('vw_hotel_summary')
-          .select('*')
-          .in('id', clientIds);
+      return ((data ?? []) as Record<string, unknown>[]).map(r => ({
+        id:          r.id          as number,
+        name:        r.nome_fantasia as string,
+        razaoSocial: r.razao_social  as string,
+        city:        (r.cidade       as string) ?? '—',
+        state:       (r.estado       as string) ?? '—',
+        uhs:         r.total_uhs     as number,
+        leitos:      r.total_leitos  as number | null,
+        ativo:       r.ativo         as boolean,
 
-        if (err) throw err;
+        avgOcc:          num(r.occ_mes_atual),
+        avgRevpar:       num(r.revpar_mes_atual),
+        avgDm:           nullableNum(r.dm_mes_atual),
+        totalReceita:    (r.receita_ytd    as number) ?? 0,
+        totalRecDiarias: 0,
+        totalRecAb:      0,
+        diasComDados:    (r.dias_mes_atual as number) ?? 0,
 
-        const summaries: HotelSummary[] = ((data ?? []) as Record<string, unknown>[]).map(r => ({
-          id:          r.id          as number,
-          name:        r.nome_fantasia as string,
-          razaoSocial: r.razao_social  as string,
-          city:        (r.cidade       as string) ?? '—',
-          state:       (r.estado       as string) ?? '—',
-          uhs:         r.total_uhs     as number,
-          leitos:      r.total_leitos  as number | null,
-          ativo:       r.ativo         as boolean,
+        receitaMesAtual:        (r.receita_mes_atual        as number) ?? 0,
+        recDiariasMesAtual:     (r.rec_diarias_mes_atual    as number) ?? 0,
+        receitaMesAnterior:     (r.receita_mes_anterior     as number) ?? 0,
+        recDiariasMesAnterior:  (r.rec_diarias_mes_anterior as number) ?? 0,
+        receitaMesQueVem:       0,
+        occMesAtual:            num(r.occ_mes_atual),
+        occMesAnterior:         (r.occ_mes_anterior         as number) ?? 0,
+        occMesQueVem:           0,
+        ocupadosMesAtual:       (r.ocupados_mes_atual       as number) ?? 0,
+        ocupadosMesAnterior:    (r.ocupados_mes_anterior    as number) ?? 0,
+        cortesiaMesAtual:       (r.cortesia_mes_atual       as number) ?? 0,
+        hospedesMesAtual:       (r.hospedes_mes_atual       as number) ?? 0,
+        diasMesAtual:           (r.dias_mes_atual           as number) ?? 0,
 
-          // Aggregated — use view values as best proxies
-          avgOcc:          num(r.occ_mes_atual),
-          avgRevpar:       num(r.revpar_mes_atual),
-          avgDm:           nullableNum(r.dm_mes_atual),
-          totalReceita:    (r.receita_ytd    as number) ?? 0,
-          totalRecDiarias: 0,
-          totalRecAb:      0,
-          diasComDados:    (r.dias_mes_atual as number) ?? 0,
+        receitaAnoAnterior:     (r.receita_ano_anterior     as number) ?? 0,
+        recDiariasAnoAnterior:  (r.rec_diarias_ano_anterior as number) ?? 0,
+        occAnoAnterior:         (r.occ_ano_anterior         as number) ?? 0,
+        ocupadosAnoAnterior:    (r.ocupados_ano_anterior    as number) ?? 0,
 
-          // Current month
-          receitaMesAtual:        (r.receita_mes_atual        as number) ?? 0,
-          recDiariasMesAtual:     (r.rec_diarias_mes_atual    as number) ?? 0,
-          receitaMesAnterior:     (r.receita_mes_anterior     as number) ?? 0,
-          recDiariasMesAnterior:  (r.rec_diarias_mes_anterior as number) ?? 0,
-          receitaMesQueVem:       0,
-          occMesAtual:            num(r.occ_mes_atual),
-          occMesAnterior:         (r.occ_mes_anterior         as number) ?? 0,
-          occMesQueVem:           0,
-          ocupadosMesAtual:       (r.ocupados_mes_atual       as number) ?? 0,
-          ocupadosMesAnterior:    (r.ocupados_mes_anterior    as number) ?? 0,
-          cortesiaMesAtual:       (r.cortesia_mes_atual       as number) ?? 0,
-          hospedesMesAtual:       (r.hospedes_mes_atual       as number) ?? 0,
-          diasMesAtual:           (r.dias_mes_atual           as number) ?? 0,
+        receitaYTD:   (r.receita_ytd   as number) ?? 0,
+        occAvgYTD:    (r.occ_avg_ytd   as number) ?? 0,
+        ocupadosYTD:  (r.ocupados_ytd  as number) ?? 0,
+        hospedesYTD:  (r.hospedes_ytd  as number) ?? 0,
+        dmYTD:         r.dm_ytd        as number | null,
 
-          // YoY (mesmo mês ano anterior)
-          receitaAnoAnterior:     (r.receita_ano_anterior     as number) ?? 0,
-          recDiariasAnoAnterior:  (r.rec_diarias_ano_anterior as number) ?? 0,
-          occAnoAnterior:         (r.occ_ano_anterior         as number) ?? 0,
-          ocupadosAnoAnterior:    (r.ocupados_ano_anterior    as number) ?? 0,
+        latestDate:      (r.latest_date      as string) ?? '—',
+        latestExtracao:  (r.latest_extracao  as string) ?? '—',
+        latestOcupados:  (r.latest_ocupados  as number) ?? 0,
+        latestOcc:       (r.latest_occ       as number) ?? 0,
+        latestRevpar:    num(r.latest_revpar),
+        latestDm:         r.latest_dm        as number | null,
+        latestRecTotal:  (r.latest_rec_total as number) ?? 0,
 
-          // YTD
-          receitaYTD:   (r.receita_ytd   as number) ?? 0,
-          occAvgYTD:    (r.occ_avg_ytd   as number) ?? 0,
-          ocupadosYTD:  (r.ocupados_ytd  as number) ?? 0,
-          hospedesYTD:  (r.hospedes_ytd  as number) ?? 0,
-          dmYTD:         r.dm_ytd        as number | null,
+        status: deriveStatus(num(r.occ_mes_atual)),
+      }));
+    },
+  });
 
-          // Latest day snapshot
-          latestDate:      (r.latest_date      as string) ?? '—',
-          latestExtracao:  (r.latest_extracao  as string) ?? '—',
-          latestOcupados:  (r.latest_ocupados  as number) ?? 0,
-          latestOcc:       (r.latest_occ       as number) ?? 0,
-          latestRevpar:    num(r.latest_revpar),
-          latestDm:         r.latest_dm        as number | null,
-          latestRecTotal:  (r.latest_rec_total as number) ?? 0,
-
-          status: deriveStatus(num(r.occ_mes_atual)),
-        }));
-
-        setHotels(summaries);
-      } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : 'Erro ao carregar hotéis');
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
-  }, []);
-
-  return { hotels, loading, error };
+  return { hotels: data ?? [], loading: isLoading, error: errMsg(error) };
 }
 
-// ─── Fetch a single hotel with full detail ──────────────────────────
+// ─── Fetch a single hotel with full detail (parallelized) ────────────
 
 export function useHotelDetail(id: number) {
-  const [hotel, setHotel] = useState<HotelRow | null>(null);
-  const [kpis, setKpis] = useState<KpiDiario[]>([]);
-  const [summary, setSummary] = useState<HotelSummary | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [version, setVersion] = useState(0);
-
-  const reload = useCallback(() => setVersion(v => v + 1), []);
-
-  useEffect(() => {
-    async function load() {
-      setLoading(true);
-      try {
-        const { data: hotelData, error: hErr } = await supabase
-          .from('hotel')
-          .select('*')
-          .eq('id', id)
-          .single();
-
-        if (hErr) throw hErr;
-
-        const { data: kpiRows, error: kErr } = await supabase
+  const { data, isLoading, error, refetch } = useQuery({
+    queryKey: ['hotel-detail', id],
+    enabled: !!id,
+    queryFn: async () => {
+      // Parallel: hotel record + KPI rows (was a sequential waterfall).
+      const [hotelRes, kpiRes] = await Promise.all([
+        supabase.from('hotel').select('*').eq('id', id).single(),
+        supabase
           .from('vw_hotel_receita_diaria_atual')
           .select('*')
           .eq('hotel_id', id)
-          .order('data_referencia', { ascending: true });
+          .order('data_referencia', { ascending: true }),
+      ]);
 
-        if (kErr) throw kErr;
+      if (hotelRes.error) throw hotelRes.error;
+      if (kpiRes.error) throw kpiRes.error;
 
-        const parsed = ((kpiRows ?? []) as ReceitaDiariaRow[]).map(parseKpiRow);
+      const hotelData = hotelRes.data as HotelRow;
+      const kpiRows = (kpiRes.data ?? []) as ReceitaDiariaRow[];
 
-        setHotel(hotelData as HotelRow);
-        setKpis(parsed);
-        setSummary(buildHotelSummary(hotelData as HotelRow, (kpiRows ?? []) as ReceitaDiariaRow[]));
-      } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : 'Erro ao carregar hotel');
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
-  }, [id, version]);
+      return {
+        hotel: hotelData,
+        kpis: kpiRows.map(parseKpiRow),
+        summary: buildHotelSummary(hotelData, kpiRows),
+      };
+    },
+  });
 
-  return { hotel, kpis, summary, loading, error, reload };
+  const reload = useCallback(() => { void refetch(); }, [refetch]);
+
+  return {
+    hotel: data?.hotel ?? null,
+    kpis: (data?.kpis ?? []) as KpiDiario[],
+    summary: data?.summary ?? null,
+    loading: isLoading,
+    error: errMsg(error),
+    reload,
+  };
 }
 
 // ─── Update a hotel record ──────────────────────────────────────────
@@ -246,55 +248,45 @@ export async function updateHotel(
     .eq('id', id);
 
   if (error) return { success: false, error: error.message };
+
+  // Refresh anything that shows hotel attributes.
+  void queryClient.invalidateQueries({ queryKey: ['hotel-detail'] });
+  void queryClient.invalidateQueries({ queryKey: ['cliente-detalhe-header'] });
+  void queryClient.invalidateQueries({ queryKey: ['hotels-summary'] });
+  void queryClient.invalidateQueries({ queryKey: ['clientes-table'] });
+  void queryClient.invalidateQueries({ queryKey: ['home-page'] });
   return { success: true };
 }
 
 // ─── Fetch booking rates (rate shopper) for a hotel + month ─────────
 
 export function useBookingRates(hotelId: number, yearMonth: string) {
-  const [rates, setRates] = useState<BookingRate[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    async function load() {
-      setLoading(true);
+  const { data, isLoading } = useQuery({
+    queryKey: ['booking-rates', hotelId, yearMonth],
+    enabled: !!hotelId && !!yearMonth,
+    queryFn: async () => {
       const monthStart = `${yearMonth}-01`;
       const today = localDateKey();
       const from = monthStart < today ? today : monthStart;
       const [y, mo] = yearMonth.split('-').map(Number);
       const lastDay = new Date(y, mo, 0).getDate();
       const to = `${yearMonth}-${String(lastDay).padStart(2, '0')}`;
+      return fetchBookingRatesRange(hotelId, from, to);
+    },
+  });
 
-      try {
-        setRates(await fetchBookingRatesRange(hotelId, from, to));
-      } catch {
-        setRates([]);
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
-  }, [hotelId, yearMonth]);
-
-  return { rates, loading };
+  return { rates: data ?? [], loading: isLoading };
 }
 
 export function useBookingRatesForMonths(hotelId: number, yearMonths: string[]) {
-  const [rates, setRates] = useState<BookingRate[]>([]);
-  const [loading, setLoading] = useState(true);
   const monthsKey = yearMonths.join('|');
-
-  useEffect(() => {
-    async function load() {
-      setLoading(true);
+  const { data, isLoading } = useQuery({
+    queryKey: ['booking-rates-months', hotelId, monthsKey],
+    enabled: !!hotelId && monthsKey.length > 0,
+    queryFn: async () => {
       const months = [...new Set(monthsKey.split('|').filter(Boolean))].sort();
       const today = localDateKey();
-
-      if (!hotelId || months.length === 0) {
-        setRates([]);
-        setLoading(false);
-        return;
-      }
+      if (!hotelId || months.length === 0) return [];
 
       const firstMonth = months[0];
       const lastMonth = months[months.length - 1];
@@ -304,20 +296,12 @@ export function useBookingRatesForMonths(hotelId: number, yearMonths: string[]) 
       const from = monthStart < today ? today : monthStart;
       const to = `${lastMonth}-${String(lastDay).padStart(2, '0')}`;
 
-      try {
-        const loaded = await fetchBookingRatesRange(hotelId, from, to, false);
-        setRates(loaded.filter(r => months.includes(r.checkinDate.slice(0, 7))));
-      } catch {
-        setRates([]);
-      } finally {
-        setLoading(false);
-      }
-    }
+      const loaded = await fetchBookingRatesRange(hotelId, from, to, false);
+      return loaded.filter(r => months.includes(r.checkinDate.slice(0, 7)));
+    },
+  });
 
-    load();
-  }, [hotelId, monthsKey]);
-
-  return { rates, loading };
+  return { rates: data ?? [], loading: isLoading };
 }
 
 // ─── Hotel Monthly KPIs (history for Metas page) ────────────────────
@@ -337,93 +321,71 @@ export interface MonthlyKpi {
 }
 
 export function useHotelsMonthly() {
-  const [rows, setRows]       = useState<MonthlyKpi[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data, isLoading } = useQuery({
+    queryKey: ['hotels-monthly'],
+    queryFn: async (): Promise<MonthlyKpi[]> => {
+      const clientIds = await getClientHotelIds();
+      if (clientIds.length === 0) return [];
 
-  useEffect(() => {
-    async function load() {
-      setLoading(true);
-      try {
-        const clientIds = await fetchClientHotelIds();
-        if (clientIds.length === 0) {
-          setRows([]);
-          return;
-        }
+      const { data, error } = await supabase
+        .from('vw_hotel_monthly_kpis')
+        .select('*')
+        .in('hotel_id', clientIds);
+      if (error) throw error;
 
-        const { data, error } = await supabase
-          .from('vw_hotel_monthly_kpis')
-          .select('*')
-          .in('hotel_id', clientIds);
-        if (!error && data) {
-          setRows((data as Record<string, unknown>[]).map(r => ({
-            hotelId:   r.hotel_id    as number,
-            mesAno:    r.mes_ano     as string,
-            receita:   (r.receita    as number) ?? 0,
-            recDiarias:(r.rec_diarias as number) ?? 0,
-            occ:       (r.occ        as number) ?? 0,
-            dm:         r.dm         as number | null,
-            revpar:     r.revpar     as number | null,
-            ocupados:  (r.ocupados   as number) ?? 0,
-            cortesia:  (r.cortesia   as number) ?? 0,
-            hospedes:  (r.hospedes   as number) ?? 0,
-            dias:      (r.dias       as number) ?? 0,
-          })));
-        }
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
-  }, []);
+      return ((data ?? []) as Record<string, unknown>[]).map(r => ({
+        hotelId:   r.hotel_id    as number,
+        mesAno:    r.mes_ano     as string,
+        receita:   (r.receita    as number) ?? 0,
+        recDiarias:(r.rec_diarias as number) ?? 0,
+        occ:       (r.occ        as number) ?? 0,
+        dm:         r.dm         as number | null,
+        revpar:     r.revpar     as number | null,
+        ocupados:  (r.ocupados   as number) ?? 0,
+        cortesia:  (r.cortesia   as number) ?? 0,
+        hospedes:  (r.hospedes   as number) ?? 0,
+        dias:      (r.dias       as number) ?? 0,
+      }));
+    },
+  });
 
-  return { rows, loading };
+  return { rows: data ?? [], loading: isLoading };
 }
 
 // ─── Hotel Metas (goals) ─────────────────────────────────────────────
 
+function mapHotelMeta(r: Record<string, unknown>): HotelMeta {
+  return {
+    id:           r.id          as number,
+    hotelId:      r.hotel_id    as number,
+    mesAno:       r.mes_ano     as string,
+    receitaMeta:  r.receita_meta as number | null,
+    occMeta:      r.occ_meta    as number | null,
+    dmMeta:       r.dm_meta     as number | null,
+    revparMeta:   r.revpar_meta as number | null,
+  };
+}
+
 export function useHotelMetas(mesAno: string) {
-  const [metas, setMetas] = useState<HotelMeta[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [version, setVersion] = useState(0);
+  const { data, isLoading, refetch } = useQuery({
+    queryKey: ['hotel-metas', mesAno],
+    enabled: !!mesAno,
+    queryFn: async (): Promise<HotelMeta[]> => {
+      const clientIds = await getClientHotelIds();
+      if (clientIds.length === 0) return [];
 
-  const reload = useCallback(() => setVersion(v => v + 1), []);
+      const { data, error } = await supabase
+        .from('hotel_metas')
+        .select('*')
+        .eq('mes_ano', mesAno)
+        .in('hotel_id', clientIds);
+      if (error) throw error;
+      return ((data ?? []) as Record<string, unknown>[]).map(mapHotelMeta);
+    },
+  });
 
-  useEffect(() => {
-    if (!mesAno) return;
-    async function load() {
-      setLoading(true);
-      try {
-        const clientIds = await fetchClientHotelIds();
-        if (clientIds.length === 0) {
-          setMetas([]);
-          return;
-        }
-
-        const { data, error } = await supabase
-          .from('hotel_metas')
-          .select('*')
-          .eq('mes_ano', mesAno)
-          .in('hotel_id', clientIds);
-
-        if (!error && data) {
-          setMetas((data as Record<string, unknown>[]).map(r => ({
-            id:           r.id          as number,
-            hotelId:      r.hotel_id    as number,
-            mesAno:       r.mes_ano     as string,
-            receitaMeta:  r.receita_meta as number | null,
-            occMeta:      r.occ_meta    as number | null,
-            dmMeta:       r.dm_meta     as number | null,
-            revparMeta:   r.revpar_meta as number | null,
-          })));
-        }
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
-  }, [mesAno, version]);
-
-  return { metas, loading, reload };
+  const reload = useCallback(() => { void refetch(); }, [refetch]);
+  return { metas: data ?? [], loading: isLoading, reload };
 }
 
 export async function saveHotelMeta(
@@ -444,18 +406,24 @@ export async function saveHotelMeta(
       { onConflict: 'hotel_id,mes_ano' }
     );
   if (error) return { success: false, error: error.message };
+
+  // Refresh anything that depends on goals.
+  void queryClient.invalidateQueries({ queryKey: ['metas-page'] });
+  void queryClient.invalidateQueries({ queryKey: ['hotel-metas'] });
+  void queryClient.invalidateQueries({ queryKey: ['all-metas'] });
+  void queryClient.invalidateQueries({ queryKey: ['home-page'] });
+  void queryClient.invalidateQueries({ queryKey: ['clientes-table'] });
+  void queryClient.invalidateQueries({ queryKey: ['cliente-detalhe-cards'] });
   return { success: true };
 }
 
 // ─── Fetch pick-up data for a hotel ─────────────────────────────────
 
 export function usePickup(hotelId: number) {
-  const [rows, setRows] = useState<PickupRow[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    async function load() {
-      setLoading(true);
+  const { data, isLoading } = useQuery({
+    queryKey: ['pickup', hotelId],
+    enabled: !!hotelId,
+    queryFn: async (): Promise<PickupRow[]> => {
       const pageSize = 1000;
       const allRows: PickupRow[] = [];
       let from = 0;
@@ -469,62 +437,39 @@ export function usePickup(hotelId: number) {
           .order('data_extracao', { ascending: true })
           .range(from, from + pageSize - 1);
 
-        if (error) break;
+        if (error) throw error;
         const page = (data ?? []) as PickupRow[];
         allRows.push(...page);
         if (page.length < pageSize) break;
         from += pageSize;
       }
 
-      setRows(allRows.filter(r => isPickupExtractionAllowed(r.data_extracao, r.data_referencia)));
-      setLoading(false);
-    }
-    load();
-  }, [hotelId]);
+      return allRows.filter(r => isPickupExtractionAllowed(r.data_extracao, r.data_referencia));
+    },
+  });
 
-  return { rows, loading };
+  return { rows: data ?? [], loading: isLoading };
 }
 
 // ─── All metas (for history table with meta columns) ─────────────────
 
 export function useAllMetas() {
-  const [metas, setMetas] = useState<HotelMeta[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data, isLoading } = useQuery({
+    queryKey: ['all-metas'],
+    queryFn: async (): Promise<HotelMeta[]> => {
+      const clientIds = await getClientHotelIds();
+      if (clientIds.length === 0) return [];
 
-  useEffect(() => {
-    async function load() {
-      setLoading(true);
-      try {
-        const clientIds = await fetchClientHotelIds();
-        if (clientIds.length === 0) {
-          setMetas([]);
-          return;
-        }
+      const { data, error } = await supabase
+        .from('hotel_metas')
+        .select('*')
+        .in('hotel_id', clientIds);
+      if (error) throw error;
+      return ((data ?? []) as Record<string, unknown>[]).map(mapHotelMeta);
+    },
+  });
 
-        const { data, error } = await supabase
-          .from('hotel_metas')
-          .select('*')
-          .in('hotel_id', clientIds);
-
-        if (!error && data) {
-          setMetas((data as Record<string, unknown>[]).map(r => ({
-            id:           r.id           as number,
-            hotelId:      r.hotel_id     as number,
-            mesAno:       r.mes_ano      as string,
-            receitaMeta:  r.receita_meta as number | null,
-            occMeta:      r.occ_meta     as number | null,
-            dmMeta:       r.dm_meta      as number | null,
-            revparMeta:   r.revpar_meta  as number | null,
-          })));
-        }
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
-  }, []);
-
-  return { metas, loading };
+  return { metas: data ?? [], loading: isLoading };
 }
 
 // ─── Pickup summary (aggregate per hotel for current month) ──────────
@@ -545,58 +490,46 @@ export interface TodayPickupAlert {
 }
 
 export function usePickupSummary() {
-  const [summaries, setSummaries] = useState<PickupSummary[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data, isLoading } = useQuery({
+    queryKey: ['pickup-summary'],
+    queryFn: async (): Promise<PickupSummary[]> => {
+      const clientIds = await getClientHotelIds();
+      if (clientIds.length === 0) return [];
 
-  useEffect(() => {
-    async function load() {
-      setLoading(true);
-      try {
-        const clientIds = await fetchClientHotelIds();
-        if (clientIds.length === 0) {
-          setSummaries([]);
-          return;
-        }
+      const now = new Date();
+      const mesAtual = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      const from = `${mesAtual}-01`;
+      const [y, mo] = mesAtual.split('-').map(Number);
+      const lastDay = new Date(y, mo, 0).getDate();
+      const to = `${mesAtual}-${String(lastDay).padStart(2, '0')}`;
 
-        const now = new Date();
-        const mesAtual = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-        const from = `${mesAtual}-01`;
-        const [y, mo] = mesAtual.split('-').map(Number);
-        const lastDay = new Date(y, mo, 0).getDate();
-        const to = `${mesAtual}-${String(lastDay).padStart(2, '0')}`;
+      const { data, error } = await supabase
+        .from('vw_pickup_diario')
+        .select('hotel_id, pu_tt_uh, pu_rec_hosp, data_extracao, data_extracao_ant, data_referencia')
+        .in('hotel_id', clientIds)
+        .gte('data_referencia', from)
+        .lte('data_referencia', to);
+      if (error) throw error;
 
-        const { data, error } = await supabase
-          .from('vw_pickup_diario')
-          .select('hotel_id, pu_tt_uh, pu_rec_hosp, data_extracao, data_extracao_ant, data_referencia')
-          .in('hotel_id', clientIds)
-          .gte('data_referencia', from)
-          .lte('data_referencia', to);
-
-        if (!error && data) {
-          const byHotel = new Map<number, { uhs: number; rec: number }>();
-          for (const r of data as Record<string, unknown>[]) {
-            if (r.data_extracao_ant == null) continue;
-            if (!isPickupExtractionAllowed(r.data_extracao as string | null, r.data_referencia as string | null)) continue;
-            const hid = r.hotel_id as number;
-            const acc = byHotel.get(hid) ?? { uhs: 0, rec: 0 };
-            acc.uhs += (r.pu_tt_uh as number) || 0;
-            acc.rec += parseFloat(String(r.pu_rec_hosp)) || 0;
-            byHotel.set(hid, acc);
-          }
-          setSummaries([...byHotel.entries()].map(([hid, v]) => ({
-            hotelId: hid,
-            pu7dUhs: v.uhs,
-            pu7dReceita: v.rec,
-          })));
-        }
-      } finally {
-        setLoading(false);
+      const byHotel = new Map<number, { uhs: number; rec: number }>();
+      for (const r of (data ?? []) as Record<string, unknown>[]) {
+        if (r.data_extracao_ant == null) continue;
+        if (!isPickupExtractionAllowed(r.data_extracao as string | null, r.data_referencia as string | null)) continue;
+        const hid = r.hotel_id as number;
+        const acc = byHotel.get(hid) ?? { uhs: 0, rec: 0 };
+        acc.uhs += (r.pu_tt_uh as number) || 0;
+        acc.rec += parseFloat(String(r.pu_rec_hosp)) || 0;
+        byHotel.set(hid, acc);
       }
-    }
-    load();
-  }, []);
+      return [...byHotel.entries()].map(([hid, v]) => ({
+        hotelId: hid,
+        pu7dUhs: v.uhs,
+        pu7dReceita: v.rec,
+      }));
+    },
+  });
 
-  return { summaries, loading };
+  return { summaries: data ?? [], loading: isLoading };
 }
 
 function hasPickupChange(row: Record<string, unknown>): boolean {
@@ -610,87 +543,67 @@ function hasPickupChange(row: Record<string, unknown>): boolean {
 }
 
 export function useTodayPickupAlerts() {
-  const [alerts, setAlerts] = useState<TodayPickupAlert[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['today-pickup-alerts'],
+    queryFn: async (): Promise<TodayPickupAlert[]> => {
+      const clientIds = await getClientHotelIds();
+      if (clientIds.length === 0) return [];
 
-  useEffect(() => {
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const clientIds = await fetchClientHotelIds();
-        if (clientIds.length === 0) {
-          setAlerts([]);
-          return;
-        }
+      const today = localDateKey();
+      const { data, error } = await supabase
+        .from('vw_pickup_diario')
+        .select('hotel_id,data_extracao,data_extracao_ant,data_referencia,pu_tt_uh,pu_rec_hosp,pu_dm_tt,pu_occ_tt,pu_revpar_tt')
+        .in('hotel_id', clientIds)
+        .eq('data_extracao', today)
+        .order('hotel_id', { ascending: true })
+        .order('data_referencia', { ascending: true });
+      if (error) throw error;
 
-        const today = localDateKey();
-        const { data, error: err } = await supabase
-          .from('vw_pickup_diario')
-          .select('hotel_id,data_extracao,data_extracao_ant,data_referencia,pu_tt_uh,pu_rec_hosp,pu_dm_tt,pu_occ_tt,pu_revpar_tt')
-          .in('hotel_id', clientIds)
-          .eq('data_extracao', today)
-          .order('hotel_id', { ascending: true })
-          .order('data_referencia', { ascending: true });
+      const byHotel = new Map<number, {
+        dataExtracao: string;
+        alteracoes: number;
+        pickupUhs: number;
+        pickupReceita: number;
+        referencias: Set<string>;
+      }>();
 
-        if (err) throw err;
+      for (const row of (data ?? []) as Record<string, unknown>[]) {
+        if (row.data_extracao_ant == null) continue;
+        if (!isPickupExtractionAllowed(row.data_extracao as string | null, row.data_referencia as string | null)) continue;
+        if (!hasPickupChange(row)) continue;
 
-        const byHotel = new Map<number, {
-          dataExtracao: string;
-          alteracoes: number;
-          pickupUhs: number;
-          pickupReceita: number;
-          referencias: Set<string>;
-        }>();
+        const hotelId = num(row.hotel_id);
+        if (!hotelId) continue;
 
-        for (const row of (data ?? []) as Record<string, unknown>[]) {
-          if (row.data_extracao_ant == null) continue;
-          if (!isPickupExtractionAllowed(row.data_extracao as string | null, row.data_referencia as string | null)) continue;
-          if (!hasPickupChange(row)) continue;
+        const acc = byHotel.get(hotelId) ?? {
+          dataExtracao: String(row.data_extracao ?? today),
+          alteracoes: 0,
+          pickupUhs: 0,
+          pickupReceita: 0,
+          referencias: new Set<string>(),
+        };
 
-          const hotelId = num(row.hotel_id);
-          if (!hotelId) continue;
-
-          const acc = byHotel.get(hotelId) ?? {
-            dataExtracao: String(row.data_extracao ?? today),
-            alteracoes: 0,
-            pickupUhs: 0,
-            pickupReceita: 0,
-            referencias: new Set<string>(),
-          };
-
-          acc.alteracoes += 1;
-          acc.pickupUhs += num(row.pu_tt_uh);
-          acc.pickupReceita += num(row.pu_rec_hosp);
-          if (row.data_referencia) acc.referencias.add(String(row.data_referencia));
-          byHotel.set(hotelId, acc);
-        }
-
-        setAlerts(
-          [...byHotel.entries()]
-            .map(([hotelId, alert]) => ({
-              hotelId,
-              dataExtracao: alert.dataExtracao,
-              alteracoes: alert.alteracoes,
-              pickupUhs: alert.pickupUhs,
-              pickupReceita: alert.pickupReceita,
-              referencias: [...alert.referencias].sort(),
-            }))
-            .sort((a, b) => b.alteracoes - a.alteracoes || Math.abs(b.pickupReceita) - Math.abs(a.pickupReceita))
-        );
-      } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : 'Erro ao carregar alertas de pick-up');
-        setAlerts([]);
-      } finally {
-        setLoading(false);
+        acc.alteracoes += 1;
+        acc.pickupUhs += num(row.pu_tt_uh);
+        acc.pickupReceita += num(row.pu_rec_hosp);
+        if (row.data_referencia) acc.referencias.add(String(row.data_referencia));
+        byHotel.set(hotelId, acc);
       }
-    }
 
-    load();
-  }, []);
+      return [...byHotel.entries()]
+        .map(([hotelId, alert]) => ({
+          hotelId,
+          dataExtracao: alert.dataExtracao,
+          alteracoes: alert.alteracoes,
+          pickupUhs: alert.pickupUhs,
+          pickupReceita: alert.pickupReceita,
+          referencias: [...alert.referencias].sort(),
+        }))
+        .sort((a, b) => b.alteracoes - a.alteracoes || Math.abs(b.pickupReceita) - Math.abs(a.pickupReceita));
+    },
+  });
 
-  return { alerts, loading, error };
+  return { alerts: data ?? [], loading: isLoading, error: errMsg(error) };
 }
 
 export interface HomePageRow {
@@ -761,38 +674,22 @@ function mapHomePageRow(row: Record<string, unknown>): HomePageRow {
 }
 
 export function useHomePage(mesAno?: string, dataExtracao?: string) {
-  const [rows, setRows] = useState<HomePageRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const date = dataExtracao || localDateKey();
+  const month = mesAno || date.slice(0, 7);
 
-  useEffect(() => {
-    async function load() {
-      setLoading(true);
-      setError(null);
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['home-page', month, date],
+    queryFn: async (): Promise<HomePageRow[]> => {
+      const { data, error } = await supabase.rpc('rpc_home_page', {
+        p_mes_ano: month,
+        p_data_extracao: date,
+      });
+      if (error) throw error;
+      return ((data ?? []) as Record<string, unknown>[]).map(mapHomePageRow);
+    },
+  });
 
-      const date = dataExtracao || localDateKey();
-      const month = mesAno || date.slice(0, 7);
-
-      try {
-        const { data, error: err } = await supabase.rpc('rpc_home_page', {
-          p_mes_ano: month,
-          p_data_extracao: date,
-        });
-
-        if (err) throw err;
-        setRows(((data ?? []) as Record<string, unknown>[]).map(mapHomePageRow));
-      } catch (err: unknown) {
-        setRows([]);
-        setError(err instanceof Error ? err.message : 'Erro ao carregar Home');
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    load();
-  }, [dataExtracao, mesAno]);
-
-  return { rows, loading, error };
+  return { rows: data ?? [], loading: isLoading, error: errMsg(error) };
 }
 
 export interface MetasPageRow {
@@ -828,42 +725,18 @@ function mapMetasPageRow(row: Record<string, unknown>): MetasPageRow {
 }
 
 export function useMetasPage(mesAno: string) {
-  const [rows, setRows] = useState<MetasPageRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [version, setVersion] = useState(0);
+  const { data, isLoading, error, refetch } = useQuery({
+    queryKey: ['metas-page', mesAno],
+    enabled: !!mesAno,
+    queryFn: async (): Promise<MetasPageRow[]> => {
+      const { data, error } = await supabase.rpc('rpc_metas_page', { p_mes_ano: mesAno });
+      if (error) throw error;
+      return ((data ?? []) as Record<string, unknown>[]).map(mapMetasPageRow);
+    },
+  });
 
-  const reload = useCallback(() => setVersion(v => v + 1), []);
-
-  useEffect(() => {
-    if (!mesAno) {
-      setRows([]);
-      setLoading(false);
-      return;
-    }
-
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const { data, error: err } = await supabase.rpc('rpc_metas_page', {
-          p_mes_ano: mesAno,
-        });
-
-        if (err) throw err;
-        setRows(((data ?? []) as Record<string, unknown>[]).map(mapMetasPageRow));
-      } catch (err: unknown) {
-        setRows([]);
-        setError(err instanceof Error ? err.message : 'Erro ao carregar metas');
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    load();
-  }, [mesAno, version]);
-
-  return { rows, loading, error, reload };
+  const reload = useCallback(() => { void refetch(); }, [refetch]);
+  return { rows: data ?? [], loading: isLoading, error: errMsg(error), reload };
 }
 
 export interface ClientesPageRow {
@@ -945,100 +818,46 @@ function mapClientesPageRow(row: Record<string, unknown>): ClientesPageRow {
 }
 
 export function useClientesCalendar(mesAno?: string | null, dataExtracao?: string | null) {
-  const [calendar, setCalendar] = useState<ClientesCalendarState | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['clientes-calendar', mesAno ?? '', dataExtracao ?? ''],
+    queryFn: async (): Promise<ClientesCalendarState | null> => {
+      const { data, error } = await supabase.rpc('rpc_clientes_calendar', {
+        p_mes_ano: mesAno || null,
+        p_data_extracao: dataExtracao || null,
+      });
+      if (error) throw error;
+      const row = Array.isArray(data) ? data[0] : data;
+      return row
+        ? mapClientesCalendarState(row as Record<string, unknown>, mesAno || '', dataExtracao || '')
+        : null;
+    },
+  });
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const { data, error: err } = await supabase.rpc('rpc_clientes_calendar', {
-          p_mes_ano: mesAno || null,
-          p_data_extracao: dataExtracao || null,
-        });
-
-        if (err) throw err;
-        const row = Array.isArray(data) ? data[0] : data;
-        if (!cancelled) {
-          setCalendar(row
-            ? mapClientesCalendarState(row as Record<string, unknown>, mesAno || '', dataExtracao || '')
-            : null);
-        }
-      } catch (err: unknown) {
-        if (!cancelled) {
-          setCalendar(null);
-          setError(err instanceof Error ? err.message : 'Erro ao carregar calendario de clientes');
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    load();
-    return () => { cancelled = true; };
-  }, [mesAno, dataExtracao]);
-
-  return {
-    calendar,
-    loading,
-    error,
-  };
+  return { calendar: data ?? null, loading: isLoading, error: errMsg(error) };
 }
 
 export function useClientesTable(mesAno?: string | null, dataExtracao?: string | null) {
-  const [rows, setRows] = useState<ClientesPageRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!mesAno || !dataExtracao) {
-      setRows([]);
-      setLoading(false);
-      setError(null);
-      return;
-    }
-
-    let cancelled = false;
-
-    async function load() {
+  const enabled = !!mesAno && !!dataExtracao;
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['clientes-table', mesAno ?? '', dataExtracao ?? ''],
+    enabled,
+    queryFn: async (): Promise<ClientesPageRow[]> => {
+      // Minimum loading window avoids a skeleton flash on fast fetches; only
+      // applies on real fetches (cache hits skip the queryFn entirely).
       const startedAt = Date.now();
-      const waitForMinimumLoading = async () => {
-        const remaining = CLIENTES_PAGE_MIN_LOADING_MS - (Date.now() - startedAt);
-        if (remaining > 0) await sleep(remaining);
-      };
+      const { data, error } = await supabase.rpc('rpc_clientes_table', {
+        p_mes_ano: mesAno,
+        p_data_extracao: dataExtracao,
+      });
+      if (error) throw error;
+      const rows = ((data ?? []) as Record<string, unknown>[]).map(mapClientesPageRow);
+      const remaining = CLIENTES_PAGE_MIN_LOADING_MS - (Date.now() - startedAt);
+      if (remaining > 0) await sleep(remaining);
+      return rows;
+    },
+  });
 
-      setLoading(true);
-      setError(null);
-      try {
-        const { data, error: err } = await supabase.rpc('rpc_clientes_table', {
-          p_mes_ano: mesAno,
-          p_data_extracao: dataExtracao,
-        });
-
-        if (err) throw err;
-        const nextRows = ((data ?? []) as Record<string, unknown>[]).map(mapClientesPageRow);
-        await waitForMinimumLoading();
-        if (!cancelled) setRows(nextRows);
-      } catch (err: unknown) {
-        await waitForMinimumLoading();
-        if (!cancelled) {
-          setRows([]);
-          setError(err instanceof Error ? err.message : 'Erro ao carregar clientes');
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    load();
-    return () => { cancelled = true; };
-  }, [mesAno, dataExtracao]);
-
-  return { rows, loading, error };
+  return { rows: data ?? [], loading: isLoading, error: errMsg(error) };
 }
 
 export interface ClienteDetalheHeader {
@@ -1148,102 +967,45 @@ function mapClienteDetalheCalendarState(
 }
 
 export function useClienteDetalheCalendar(hotelId: number, mesAno?: string | null, dataExtracao?: string | null) {
-  const [calendar, setCalendar] = useState<ClienteDetalheCalendarState | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['cliente-detalhe-calendar', hotelId, mesAno ?? '', dataExtracao ?? ''],
+    enabled: !!hotelId,
+    queryFn: async (): Promise<ClienteDetalheCalendarState | null> => {
+      const { data, error } = await supabase.rpc('rpc_cliente_detalhe_calendar', {
+        p_hotel_id: hotelId,
+        p_mes_ano: mesAno || null,
+        p_data_extracao: dataExtracao || null,
+      });
+      if (error) throw error;
+      const row = Array.isArray(data) ? data[0] : data;
+      return row
+        ? mapClienteDetalheCalendarState(row as Record<string, unknown>, mesAno || '', dataExtracao || '')
+        : null;
+    },
+  });
 
-  useEffect(() => {
-    if (!hotelId) {
-      setCalendar(null);
-      setLoading(false);
-      setError(null);
-      return;
-    }
-
-    let cancelled = false;
-
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const { data, error: err } = await supabase.rpc('rpc_cliente_detalhe_calendar', {
-          p_hotel_id: hotelId,
-          p_mes_ano: mesAno || null,
-          p_data_extracao: dataExtracao || null,
-        });
-
-        if (err) throw err;
-        const row = Array.isArray(data) ? data[0] : data;
-        if (!cancelled) {
-          setCalendar(row
-            ? mapClienteDetalheCalendarState(row as Record<string, unknown>, mesAno || '', dataExtracao || '')
-            : null);
-        }
-      } catch (err: unknown) {
-        if (!cancelled) {
-          setCalendar(null);
-          setError(err instanceof Error ? err.message : 'Erro ao carregar calendario do cliente');
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    load();
-    return () => { cancelled = true; };
-  }, [dataExtracao, hotelId, mesAno]);
-
-  return { calendar, loading, error };
+  return { calendar: data ?? null, loading: isLoading, error: errMsg(error) };
 }
 
 export function useClienteDetalheHeader(hotelId: number) {
-  const [header, setHeader] = useState<ClienteDetalheHeader | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [version, setVersion] = useState(0);
+  const { data, isLoading, error, refetch } = useQuery({
+    queryKey: ['cliente-detalhe-header', hotelId],
+    enabled: !!hotelId,
+    queryFn: async (): Promise<ClienteDetalheHeader | null> => {
+      const { data, error } = await supabase.rpc('rpc_cliente_detalhe_header', { p_hotel_id: hotelId });
+      if (error) throw error;
+      const row = Array.isArray(data) ? data[0] : data;
+      return row ? mapClienteDetalheHeader(row as Record<string, unknown>) : null;
+    },
+  });
 
-  const reload = useCallback(() => setVersion(v => v + 1), []);
-
-  useEffect(() => {
-    if (!hotelId) {
-      setHeader(null);
-      setLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const { data, error: err } = await supabase.rpc('rpc_cliente_detalhe_header', {
-          p_hotel_id: hotelId,
-        });
-
-        if (err) throw err;
-        const row = Array.isArray(data) ? data[0] : data;
-        if (!cancelled) setHeader(row ? mapClienteDetalheHeader(row as Record<string, unknown>) : null);
-      } catch (err: unknown) {
-        if (!cancelled) {
-          setHeader(null);
-          setError(err instanceof Error ? err.message : 'Erro ao carregar hotel');
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    load();
-    return () => { cancelled = true; };
-  }, [hotelId, version]);
-
+  const reload = useCallback(() => { void refetch(); }, [refetch]);
   return {
-    hotel: header?.hotel ?? null,
-    summary: header?.summary ?? null,
-    availableMonths: header?.availableMonths ?? [],
-    loading,
-    error,
+    hotel: data?.hotel ?? null,
+    summary: data?.summary ?? null,
+    availableMonths: data?.availableMonths ?? [],
+    loading: isLoading,
+    error: errMsg(error),
     reload,
   };
 }
@@ -1307,47 +1069,22 @@ function mapClienteDetalheCards(row: Record<string, unknown>): ClienteDetalheCar
 }
 
 export function useClienteDetalheCards(hotelId: number, mesAno: string, dataExtracao?: string | null) {
-  const [cards, setCards] = useState<ClienteDetalheCards | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['cliente-detalhe-cards', hotelId, mesAno, dataExtracao ?? ''],
+    enabled: !!hotelId && !!mesAno && !!dataExtracao,
+    queryFn: async (): Promise<ClienteDetalheCards | null> => {
+      const { data, error } = await supabase.rpc('rpc_cliente_detalhe_cards', {
+        p_hotel_id: hotelId,
+        p_mes_ano: mesAno,
+        p_data_extracao: dataExtracao,
+      });
+      if (error) throw error;
+      const row = Array.isArray(data) ? data[0] : data;
+      return row ? mapClienteDetalheCards(row as Record<string, unknown>) : null;
+    },
+  });
 
-  useEffect(() => {
-    if (!hotelId || !mesAno || !dataExtracao) {
-      setCards(null);
-      setLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const { data, error: err } = await supabase.rpc('rpc_cliente_detalhe_cards', {
-          p_hotel_id: hotelId,
-          p_mes_ano: mesAno,
-          p_data_extracao: dataExtracao,
-        });
-
-        if (err) throw err;
-        const row = Array.isArray(data) ? data[0] : data;
-        if (!cancelled) setCards(row ? mapClienteDetalheCards(row as Record<string, unknown>) : null);
-      } catch (err: unknown) {
-        if (!cancelled) {
-          setCards(null);
-          setError(err instanceof Error ? err.message : 'Erro ao carregar indicadores');
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    load();
-    return () => { cancelled = true; };
-  }, [dataExtracao, hotelId, mesAno]);
-
-  return { cards, loading, error };
+  return { cards: data ?? null, loading: isLoading, error: errMsg(error) };
 }
 
 function mapClientePickupRow(row: Record<string, unknown>): PickupRow {
@@ -1374,57 +1111,33 @@ function mapClientePickupRow(row: Record<string, unknown>): PickupRow {
 }
 
 export function useClientePickupDiario(hotelId: number, mesAno: string, dataExtracao?: string | null) {
-  const [rows, setRows] = useState<PickupRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['cliente-pickup-diario', hotelId, mesAno, dataExtracao ?? ''],
+    enabled: !!hotelId && !!mesAno && !!dataExtracao,
+    queryFn: async (): Promise<PickupRow[]> => {
+      const pageSize = 1000;
+      const loaded: Record<string, unknown>[] = [];
 
-  useEffect(() => {
-    if (!hotelId || !mesAno || !dataExtracao) {
-      setRows([]);
-      setLoading(false);
-      return;
-    }
+      for (let from = 0; ; from += pageSize) {
+        const { data, error } = await supabase
+          .rpc('rpc_cliente_pickup_diario', {
+            p_hotel_id: hotelId,
+            p_mes_ano: mesAno,
+            p_data_extracao: dataExtracao,
+          })
+          .range(from, from + pageSize - 1);
 
-    let cancelled = false;
-
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const pageSize = 1000;
-        const loaded: Record<string, unknown>[] = [];
-
-        for (let from = 0; ; from += pageSize) {
-          const { data, error: err } = await supabase
-            .rpc('rpc_cliente_pickup_diario', {
-              p_hotel_id: hotelId,
-              p_mes_ano: mesAno,
-              p_data_extracao: dataExtracao,
-            })
-            .range(from, from + pageSize - 1);
-
-          if (err) throw err;
-          const page = (data ?? []) as Record<string, unknown>[];
-          loaded.push(...page);
-          if (cancelled || page.length < pageSize) break;
-        }
-
-        if (!cancelled) setRows(loaded.map(mapClientePickupRow));
-      } catch (err: unknown) {
-        if (!cancelled) {
-          setRows([]);
-          setError(err instanceof Error ? err.message : 'Erro ao carregar pick-up diario');
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
+        if (error) throw error;
+        const page = (data ?? []) as Record<string, unknown>[];
+        loaded.push(...page);
+        if (page.length < pageSize) break;
       }
-    }
 
-    load();
-    return () => { cancelled = true; };
-  }, [dataExtracao, hotelId, mesAno]);
+      return loaded.map(mapClientePickupRow);
+    },
+  });
 
-  return { rows, loading, error };
+  return { rows: data ?? [], loading: isLoading, error: errMsg(error) };
 }
 
 async function fetchClienteRateShopperMonth(
@@ -1452,82 +1165,30 @@ export function useClienteRateShopper(
   from = localDateKey(),
   keepLatest = true
 ) {
-  const [rates, setRates] = useState<BookingRate[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['cliente-rate-shopper', hotelId, yearMonth, from, keepLatest],
+    enabled: !!hotelId && !!yearMonth,
+    queryFn: () => fetchClienteRateShopperMonth(hotelId, yearMonth, from, keepLatest),
+  });
 
-  useEffect(() => {
-    if (!hotelId || !yearMonth) {
-      setRates([]);
-      setLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const loaded = await fetchClienteRateShopperMonth(hotelId, yearMonth, from, keepLatest);
-        if (!cancelled) setRates(loaded);
-      } catch (err: unknown) {
-        if (!cancelled) {
-          setRates([]);
-          setError(err instanceof Error ? err.message : 'Erro ao carregar rate shopper');
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    load();
-    return () => { cancelled = true; };
-  }, [from, hotelId, keepLatest, yearMonth]);
-
-  return { rates, loading, error };
+  return { rates: data ?? [], loading: isLoading, error: errMsg(error) };
 }
 
 export function useClienteRateShopperForMonths(hotelId: number, yearMonths: string[]) {
-  const [rates, setRates] = useState<BookingRate[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const monthsKey = yearMonths.join('|');
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['cliente-rate-shopper-months', hotelId, monthsKey],
+    enabled: !!hotelId && [...new Set(monthsKey.split('|').filter(Boolean))].length > 0,
+    queryFn: async (): Promise<BookingRate[]> => {
+      const months = [...new Set(monthsKey.split('|').filter(Boolean))].sort();
+      const loaded = await Promise.all(
+        months.map(month => fetchClienteRateShopperMonth(hotelId, month, `${month}-01`, false))
+      );
+      return loaded.flat();
+    },
+  });
 
-  useEffect(() => {
-    const months = [...new Set(monthsKey.split('|').filter(Boolean))].sort();
-    if (!hotelId || months.length === 0) {
-      setRates([]);
-      setLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const loaded = await Promise.all(months.map(month => {
-          return fetchClienteRateShopperMonth(hotelId, month, `${month}-01`, false);
-        }));
-
-        if (!cancelled) setRates(loaded.flat());
-      } catch (err: unknown) {
-        if (!cancelled) {
-          setRates([]);
-          setError(err instanceof Error ? err.message : 'Erro ao carregar rate shopper');
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    load();
-    return () => { cancelled = true; };
-  }, [hotelId, monthsKey]);
-
-  return { rates, loading, error };
+  return { rates: data ?? [], loading: isLoading, error: errMsg(error) };
 }
 
 // Monthly pickup KPIs for the Pickup > Mensal tab.
@@ -1568,87 +1229,56 @@ export interface PickupMensalKpi {
   pickupUhsMom: number | null;
 }
 
-function num(value: unknown): number {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function nullableNum(value: unknown): number | null {
-  if (value == null) return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
 export function usePickupMensalKpis(hotelId: number, ano: number) {
-  const [rows, setRows] = useState<PickupMensalKpi[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['pickup-mensal-kpis', hotelId, ano],
+    enabled: !!hotelId && !!ano,
+    queryFn: async (): Promise<PickupMensalKpi[]> => {
+      const { data, error } = await supabase.rpc('rpc_cliente_pickup_mensal', {
+        p_hotel_id: hotelId,
+        p_ano: ano,
+      });
+      if (error) throw error;
 
-  useEffect(() => {
-    if (!hotelId || !ano) {
-      setRows([]);
-      setLoading(false);
-      return;
-    }
+      return ((data ?? []) as Record<string, unknown>[]).map(r => ({
+        hotelId: num(r.hotel_id),
+        hotelNome: (r.hotel_nome as string) ?? '',
+        hotelAtivo: Boolean(r.hotel_ativo),
+        ano: num(r.ano),
+        mes: num(r.mes),
+        mesAno: (r.mes_ano as string) ?? '',
+        primeiraExtracao: (r.primeira_extracao as string | null) ?? null,
+        ultimaExtracao: (r.ultima_extracao as string | null) ?? null,
+        diasReferencia: num(r.dias_referencia),
+        extracoes: num(r.extracoes),
+        snapshotsComparaveis: num(r.snapshots_comparaveis),
+        diasComAlteracao: num(r.dias_com_alteracao),
+        alteracoesDiariasMes: num(r.alteracoes_diarias_mes ?? r.dias_com_alteracao),
+        pickupUhs: num(r.pickup_uhs),
+        pickupReceita: num(r.pickup_receita),
+        pickupOccMediaPp: num(r.pickup_occ_media_pp),
+        pickupReceitaPorUh: nullableNum(r.pickup_receita_por_uh),
+        receitaReal: num(r.receita_real),
+        uhsOcupadasReal: num(r.uhs_ocupadas_real),
+        occRealMedia: num(r.occ_real_media),
+        dmRealMedia: num(r.dm_real_media),
+        revparRealMedia: num(r.revpar_real_media),
+        receitaMeta: nullableNum(r.receita_meta),
+        occMeta: nullableNum(r.occ_meta),
+        dmMeta: nullableNum(r.dm_meta),
+        revparMeta: nullableNum(r.revpar_meta),
+        receitaVsMeta: nullableNum(r.receita_vs_meta),
+        receitaMetaPct: nullableNum(r.receita_meta_pct),
+        receitaMom: nullableNum(r.receita_mom),
+        receitaMomPct: nullableNum(r.receita_mom_pct),
+        pickupReceitaMom: nullableNum(r.pickup_receita_mom),
+        pickupReceitaMomPct: nullableNum(r.pickup_receita_mom_pct),
+        pickupUhsMom: nullableNum(r.pickup_uhs_mom),
+      }));
+    },
+  });
 
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const { data, error: err } = await supabase.rpc('rpc_cliente_pickup_mensal', {
-          p_hotel_id: hotelId,
-          p_ano: ano,
-        });
-
-        if (err) throw err;
-
-        setRows(((data ?? []) as Record<string, unknown>[]).map(r => ({
-          hotelId: num(r.hotel_id),
-          hotelNome: (r.hotel_nome as string) ?? '',
-          hotelAtivo: Boolean(r.hotel_ativo),
-          ano: num(r.ano),
-          mes: num(r.mes),
-          mesAno: (r.mes_ano as string) ?? '',
-          primeiraExtracao: (r.primeira_extracao as string | null) ?? null,
-          ultimaExtracao: (r.ultima_extracao as string | null) ?? null,
-          diasReferencia: num(r.dias_referencia),
-          extracoes: num(r.extracoes),
-          snapshotsComparaveis: num(r.snapshots_comparaveis),
-          diasComAlteracao: num(r.dias_com_alteracao),
-          alteracoesDiariasMes: num(r.alteracoes_diarias_mes ?? r.dias_com_alteracao),
-          pickupUhs: num(r.pickup_uhs),
-          pickupReceita: num(r.pickup_receita),
-          pickupOccMediaPp: num(r.pickup_occ_media_pp),
-          pickupReceitaPorUh: nullableNum(r.pickup_receita_por_uh),
-          receitaReal: num(r.receita_real),
-          uhsOcupadasReal: num(r.uhs_ocupadas_real),
-          occRealMedia: num(r.occ_real_media),
-          dmRealMedia: num(r.dm_real_media),
-          revparRealMedia: num(r.revpar_real_media),
-          receitaMeta: nullableNum(r.receita_meta),
-          occMeta: nullableNum(r.occ_meta),
-          dmMeta: nullableNum(r.dm_meta),
-          revparMeta: nullableNum(r.revpar_meta),
-          receitaVsMeta: nullableNum(r.receita_vs_meta),
-          receitaMetaPct: nullableNum(r.receita_meta_pct),
-          receitaMom: nullableNum(r.receita_mom),
-          receitaMomPct: nullableNum(r.receita_mom_pct),
-          pickupReceitaMom: nullableNum(r.pickup_receita_mom),
-          pickupReceitaMomPct: nullableNum(r.pickup_receita_mom_pct),
-          pickupUhsMom: nullableNum(r.pickup_uhs_mom),
-        })));
-      } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : 'Erro ao carregar pickup mensal');
-        setRows([]);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    load();
-  }, [hotelId, ano]);
-
-  return { rows, loading, error };
+  return { rows: data ?? [], loading: isLoading, error: errMsg(error) };
 }
 
 export function useClientePickupMensal(hotelId: number, ano: number) {
@@ -1657,35 +1287,29 @@ export function useClientePickupMensal(hotelId: number, ano: number) {
 
 // ─── Pickup Acumulado Mensal ─────────────────────────────────────────
 // For each data_referencia, computes delta = last extraction of month − first extraction of month.
-// This gives the true within-month accumulated pickup (not since first-ever extraction).
 
 export interface PickupMensalRow {
-  dataReferencia:    string;   // the night being analyzed
-  dataExtracaoFirst: string;   // first extraction captured in this month
-  dataExtracaoLast:  string;   // last extraction captured in this month
+  dataReferencia:    string;
+  dataExtracaoFirst: string;
+  dataExtracaoLast:  string;
   uhsTotal:          number;
-  uhsFirst:          number;   // UHs occupied at first extraction
-  uhsLast:           number;   // UHs occupied at last extraction
+  uhsFirst:          number;
+  uhsLast:           number;
   occFirst:          number;
   occLast:           number;
   recFirst:          number;
   recLast:           number;
-  deltaUhs:          number;   // uhsLast − uhsFirst
-  deltaReceita:      number;   // recLast − recFirst
-  deltaOcc:          number;   // occLast − occFirst (pp)
-  totalSnapshots:    number;   // how many extractions captured this night in the month
+  deltaUhs:          number;
+  deltaReceita:      number;
+  deltaOcc:          number;
+  totalSnapshots:    number;
 }
 
 export function usePickupAcumuladoMensal(hotelId: number, extracaoMes: string) {
-  const [rows, setRows]             = useState<PickupMensalRow[]>([]);
-  const [extracaoRange, setRange]   = useState<{ first: string; last: string } | null>(null);
-  const [loading, setLoading]       = useState(true);
-
-  useEffect(() => {
-    if (!hotelId || !extracaoMes) { setRows([]); setRange(null); setLoading(false); return; }
-
-    async function load() {
-      setLoading(true);
+  const { data, isLoading } = useQuery({
+    queryKey: ['pickup-acumulado-mensal', hotelId, extracaoMes],
+    enabled: !!hotelId && !!extracaoMes,
+    queryFn: async (): Promise<{ rows: PickupMensalRow[]; extracaoRange: { first: string; last: string } | null }> => {
       const [y, m] = extracaoMes.split('-').map(Number);
       const from = `${extracaoMes}-01`;
       const to   = `${extracaoMes}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;
@@ -1696,70 +1320,64 @@ export function usePickupAcumuladoMensal(hotelId: number, extracaoMes: string) {
         .eq('hotel_id', hotelId)
         .gte('data_extracao',    from)
         .lte('data_extracao',    to)
-        .gte('data_referencia',  from)   // só noites do mesmo mês
+        .gte('data_referencia',  from)
         .lte('data_referencia',  to)
         .order('data_referencia', { ascending: true })
         .order('data_extracao',   { ascending: true });
 
-      if (!error && data) {
-        const raw = data as Record<string, unknown>[];
+      if (error) throw error;
+      const raw = (data ?? []) as Record<string, unknown>[];
 
-        // Group all snapshots by data_referencia
-        const byRef = new Map<string, Array<{
-          dataExtracao: string; uhs: number; uhsTotal: number;
-          occ: number; rec: number; snaps: number;
-        }>>();
-        for (const r of raw) {
-          const dr  = r.data_referencia as string;
-          const arr = byRef.get(dr) ?? [];
-          arr.push({
-            dataExtracao: r.data_extracao as string,
-            uhs:     (r.uhs_ocupadas  as number) ?? 0,
-            uhsTotal:(r.uhs_total     as number) ?? 0,
-            occ:     parseFloat(String(r.occ_pct))  || 0,
-            rec:     parseFloat(String(r.rec_total)) || 0,
-            snaps:   (r.total_snapshots as number)  ?? 0,
-          });
-          byRef.set(dr, arr);
-        }
-
-        // Collect extraction date range for the month
-        const allExtracoes = [...new Set(raw.map(r => r.data_extracao as string))].sort();
-        setRange(allExtracoes.length > 0
-          ? { first: allExtracoes[0], last: allExtracoes[allExtracoes.length - 1] }
-          : null);
-
-        // Build per-referencia rows: delta = last − first within this extraction month
-        const result: PickupMensalRow[] = [];
-        for (const [dr, snaps] of byRef) {
-          const sorted = snaps.sort((a, b) => a.dataExtracao.localeCompare(b.dataExtracao));
-          const first  = sorted[0];
-          const last   = sorted[sorted.length - 1];
-          result.push({
-            dataReferencia:    dr,
-            dataExtracaoFirst: first.dataExtracao,
-            dataExtracaoLast:  last.dataExtracao,
-            uhsTotal:          last.uhsTotal,
-            uhsFirst:          first.uhs,
-            uhsLast:           last.uhs,
-            occFirst:          first.occ,
-            occLast:           last.occ,
-            recFirst:          first.rec,
-            recLast:           last.rec,
-            deltaUhs:          last.uhs  - first.uhs,
-            deltaReceita:      last.rec  - first.rec,
-            deltaOcc:          parseFloat((last.occ - first.occ).toFixed(1)),
-            totalSnapshots:    sorted.length,
-          });
-        }
-
-        setRows(result.sort((a, b) => a.dataReferencia.localeCompare(b.dataReferencia)));
+      const byRef = new Map<string, Array<{
+        dataExtracao: string; uhs: number; uhsTotal: number;
+        occ: number; rec: number; snaps: number;
+      }>>();
+      for (const r of raw) {
+        const dr  = r.data_referencia as string;
+        const arr = byRef.get(dr) ?? [];
+        arr.push({
+          dataExtracao: r.data_extracao as string,
+          uhs:     (r.uhs_ocupadas  as number) ?? 0,
+          uhsTotal:(r.uhs_total     as number) ?? 0,
+          occ:     parseFloat(String(r.occ_pct))  || 0,
+          rec:     parseFloat(String(r.rec_total)) || 0,
+          snaps:   (r.total_snapshots as number)  ?? 0,
+        });
+        byRef.set(dr, arr);
       }
-      setLoading(false);
-    }
 
-    load();
-  }, [hotelId, extracaoMes]);
+      const allExtracoes = [...new Set(raw.map(r => r.data_extracao as string))].sort();
+      const extracaoRange = allExtracoes.length > 0
+        ? { first: allExtracoes[0], last: allExtracoes[allExtracoes.length - 1] }
+        : null;
 
-  return { rows, extracaoRange, loading };
+      const result: PickupMensalRow[] = [];
+      for (const [dr, snaps] of byRef) {
+        const sorted = snaps.sort((a, b) => a.dataExtracao.localeCompare(b.dataExtracao));
+        const first  = sorted[0];
+        const last   = sorted[sorted.length - 1];
+        result.push({
+          dataReferencia:    dr,
+          dataExtracaoFirst: first.dataExtracao,
+          dataExtracaoLast:  last.dataExtracao,
+          uhsTotal:          last.uhsTotal,
+          uhsFirst:          first.uhs,
+          uhsLast:           last.uhs,
+          occFirst:          first.occ,
+          occLast:           last.occ,
+          recFirst:          first.rec,
+          recLast:           last.rec,
+          deltaUhs:          last.uhs  - first.uhs,
+          deltaReceita:      last.rec  - first.rec,
+          deltaOcc:          parseFloat((last.occ - first.occ).toFixed(1)),
+          totalSnapshots:    sorted.length,
+        });
+      }
+      result.sort((a, b) => a.dataReferencia.localeCompare(b.dataReferencia));
+
+      return { rows: result, extracaoRange };
+    },
+  });
+
+  return { rows: data?.rows ?? [], extracaoRange: data?.extracaoRange ?? null, loading: isLoading };
 }

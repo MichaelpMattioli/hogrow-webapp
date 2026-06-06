@@ -11,7 +11,7 @@ export function formatCurrency(value: number): string {
 
 export function formatCurrencyCompact(value: number): string {
   if (value >= 1000000) {
-    return `${(value / 1000000).toFixed(1).replace('.', ',')}M`;
+    return `${(value / 1000000).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}M`;
   }
   if (value >= 1000) {
     return `${Math.round(value / 1000)}k`;
@@ -20,7 +20,7 @@ export function formatCurrencyCompact(value: number): string {
 }
 
 export function formatPercent(value: number): string {
-  return value.toFixed(1).replace('.', ',') + '%';
+  return value.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
 }
 
 export function localDateKey(date = new Date()): string {

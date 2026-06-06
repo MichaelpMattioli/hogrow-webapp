@@ -157,6 +157,7 @@ export default function ClienteDetalhe() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const hotelId = Number(id);
+  const isValidId = !!id && Number.isFinite(hotelId) && hotelId > 0;
   const mesAtual = localMonthKey();
   const [selectedMeses, setSelectedMeses] = useState<string[]>([mesAtual]);
   const [selectedPosition, setSelectedPosition] = useState('');
@@ -256,12 +257,12 @@ export default function ClienteDetalhe() {
   const pmd = (v: number | null | undefined, fmt: (n: number) => string): MetaData | null =>
     v != null && v > 0 ? { value: v, formatted: fmt(v) } : null;
 
-  if (loading) return <ClienteDetalhePageSkeleton />;
+  if (isValidId && loading) return <ClienteDetalhePageSkeleton />;
 
-  if (error || !hotel || !summary) {
+  if (!isValidId || error || !hotel || !summary) {
     return (
       <div className="text-center py-20">
-        <h2 className="text-xl font-bold mb-2">Hotel nao encontrado</h2>
+        <h2 className="text-xl font-bold mb-2">Hotel não encontrado</h2>
         <button className="text-[var(--accent)] font-medium" onClick={() => navigate('/clientes')}>
           Voltar para lista
         </button>

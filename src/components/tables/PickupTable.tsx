@@ -791,30 +791,30 @@ export default function PickupTable({
         <table className="w-full" style={{ borderCollapse:'collapse', fontSize:'11px' }}>
           <thead className="sticky top-0" style={{ background:'var(--surface)' }}>
             <tr>
-              <th style={{ ...thGroup, color: stayAxis.text, background: stayAxis.soft }} colSpan={1}>Diária</th>
-              <th style={{ ...thGroup, color: 'var(--green)', background: 'var(--green-l)' }} colSpan={5}>Pick-up vs extração anterior</th>
-              <th style={{ ...thGroup, color: extractionAxis.text, background: extractionAxis.soft }} colSpan={8}>Retrato na extração selecionada</th>
-              <th style={{ ...thGroup, color: 'var(--accent-d)', background: 'var(--accent-l)' }} colSpan={4}>Shopper</th>
+              <th scope="colgroup" style={{ ...thGroup, color: stayAxis.text, background: stayAxis.soft }} colSpan={1}>Diária</th>
+              <th scope="colgroup" style={{ ...thGroup, color: 'var(--green)', background: 'var(--green-l)' }} colSpan={5}>Pick-up vs extração anterior</th>
+              <th scope="colgroup" style={{ ...thGroup, color: extractionAxis.text, background: extractionAxis.soft }} colSpan={8}>Retrato na extração selecionada</th>
+              <th scope="colgroup" style={{ ...thGroup, color: 'var(--accent-d)', background: 'var(--accent-l)' }} colSpan={4}>Shopper</th>
             </tr>
             <tr>
-              <th style={{ ...thSnap, color: stayAxis.text }}>DATA DA DIÁRIA</th>
-              <th style={thPu}>TT UH</th>
-              <th style={thPu}>REC HOSP</th>
-              <th style={thPu}>DM TT</th>
-              <th style={thPu}>OCC%</th>
-              <th style={thPu}>REVPAR</th>
-              <th style={thSnap}>TT UHS OCUP</th>
-              <th style={thSnap}>REC HOSP</th>
-              <th style={thSnap}>DM C/C TT</th>
-              <th style={thSnap}>OCC% TT</th>
-              <th style={thSnap}>REVP TT</th>
-              <th style={thSnap}>TT HOSP</th>
-              <th style={thSnap}>CHDS</th>
-              <th style={thSnap}>UHS DISP</th>
-              <th style={thShopper}>SHOPPER PAX 1</th>
-              <th style={thShopper}>SHOPPER PAX 2</th>
-              <th style={thShopper}>SHOPPER PAX 3</th>
-              <th style={thShopper}>SHOPPER PAX 4</th>
+              <th scope="col" style={{ ...thSnap, color: stayAxis.text }}>DATA DA DIÁRIA</th>
+              <th scope="col" style={thPu}>TT UH</th>
+              <th scope="col" style={thPu}>REC HOSP</th>
+              <th scope="col" style={thPu}>DM TT</th>
+              <th scope="col" style={thPu}>OCC%</th>
+              <th scope="col" style={thPu}>REVPAR</th>
+              <th scope="col" style={thSnap}>TT UHS OCUP</th>
+              <th scope="col" style={thSnap}>REC HOSP</th>
+              <th scope="col" style={thSnap}>DM C/C TT</th>
+              <th scope="col" style={thSnap}>OCC% TT</th>
+              <th scope="col" style={thSnap}>REVP TT</th>
+              <th scope="col" style={thSnap}>TT HOSP</th>
+              <th scope="col" style={thSnap}>CHDS</th>
+              <th scope="col" style={thSnap}>UHS DISP</th>
+              <th scope="col" style={thShopper}>SHOPPER PAX 1</th>
+              <th scope="col" style={thShopper}>SHOPPER PAX 2</th>
+              <th scope="col" style={thShopper}>SHOPPER PAX 3</th>
+              <th scope="col" style={thShopper}>SHOPPER PAX 4</th>
             </tr>
           </thead>
           <tbody>
@@ -837,9 +837,8 @@ export default function PickupTable({
 
               return (
                 <tr key={`${r.data_referencia}-${r.data_extracao}`}
-                  style={{ transition:'background 0.1s' }}
-                  onMouseEnter={e => { e.currentTarget.style.background = 'var(--surface-h)'; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>
+                  className="row-hover"
+                  style={{ transition:'background 0.1s' }}>
                   <td style={cell({ fontWeight:600 })}>{fmtRef(r.data_referencia)}</td>
                   {/* Pick-ups */}
                   {noPickup ? (

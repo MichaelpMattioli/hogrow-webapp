@@ -311,16 +311,17 @@ export default function PickupMensalTable({ hotelId }: Props) {
           <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 3, fontSize: 12, minWidth: 980 }}>
             <thead>
               <tr>
-                <th style={{ ...th, textAlign: 'left', minWidth: 94 }}>Mes</th>
-                <th style={{ ...th, textAlign: 'right' }}>Meta</th>
-                <th style={{ ...th, textAlign: 'right' }}>Real</th>
-                <th style={{ ...th, textAlign: 'right' }}>R x M</th>
-                <th style={{ ...th, textAlign: 'right' }}>%</th>
-                <th style={{ ...th, textAlign: 'right' }}>MoM</th>
-                <th style={{ ...th, textAlign: 'right' }}>Pickup R$</th>
-                <th style={{ ...th, textAlign: 'right' }}>Pickup UH</th>
-                <th style={{ ...th, textAlign: 'right' }}>Occ</th>
+                <th scope="col" style={{ ...th, textAlign: 'left', minWidth: 94 }}>Mês</th>
+                <th scope="col" style={{ ...th, textAlign: 'right' }}>Meta</th>
+                <th scope="col" style={{ ...th, textAlign: 'right' }}>Real</th>
+                <th scope="col" style={{ ...th, textAlign: 'right' }}>R x M</th>
+                <th scope="col" style={{ ...th, textAlign: 'right' }}>%</th>
+                <th scope="col" style={{ ...th, textAlign: 'right' }}>MoM</th>
+                <th scope="col" style={{ ...th, textAlign: 'right' }}>Pickup R$</th>
+                <th scope="col" style={{ ...th, textAlign: 'right' }}>Pickup UH</th>
+                <th scope="col" style={{ ...th, textAlign: 'right' }}>Occ</th>
                 <th
+                  scope="col"
                   style={{ ...th, textAlign: 'center' }}
                   title="Linhas do pick-up diário com alteração, considerando extração e referência dentro do mesmo mês."
                 >
@@ -346,16 +347,17 @@ export default function PickupMensalTable({ hotelId }: Props) {
           <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 3, fontSize: 12, minWidth: 980 }}>
             <thead>
               <tr>
-                <th style={{ ...th, textAlign: 'left', minWidth: 94 }}>Mes</th>
-                <th style={{ ...th, textAlign: 'right' }}>Meta</th>
-                <th style={{ ...th, textAlign: 'right' }}>Real</th>
-                <th style={{ ...th, textAlign: 'right' }}>R x M</th>
-                <th style={{ ...th, textAlign: 'right' }}>%</th>
-                <th style={{ ...th, textAlign: 'right' }}>MoM</th>
-                <th style={{ ...th, textAlign: 'right' }}>Pickup R$</th>
-                <th style={{ ...th, textAlign: 'right' }}>Pickup UH</th>
-                <th style={{ ...th, textAlign: 'right' }}>Occ</th>
+                <th scope="col" style={{ ...th, textAlign: 'left', minWidth: 94 }}>Mês</th>
+                <th scope="col" style={{ ...th, textAlign: 'right' }}>Meta</th>
+                <th scope="col" style={{ ...th, textAlign: 'right' }}>Real</th>
+                <th scope="col" style={{ ...th, textAlign: 'right' }}>R x M</th>
+                <th scope="col" style={{ ...th, textAlign: 'right' }}>%</th>
+                <th scope="col" style={{ ...th, textAlign: 'right' }}>MoM</th>
+                <th scope="col" style={{ ...th, textAlign: 'right' }}>Pickup R$</th>
+                <th scope="col" style={{ ...th, textAlign: 'right' }}>Pickup UH</th>
+                <th scope="col" style={{ ...th, textAlign: 'right' }}>Occ</th>
                 <th
+                  scope="col"
                   style={{ ...th, textAlign: 'center' }}
                   title="Linhas do pick-up diário com alteração, considerando extração e referência dentro do mesmo mês."
                 >

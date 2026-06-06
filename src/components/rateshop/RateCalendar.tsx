@@ -135,16 +135,16 @@ function downloadCSV(
     const s   = summaries.get(date);
     const d   = new Date(date + 'T00:00:00');
     const dia = DAY_LABELS3[d.getDay()];
-    const nossa = s?.clientMin != null ? s.clientMin.toFixed(2) : '';
-    const pct   = s?.pctVsCompetitor != null ? `${s.pctVsCompetitor.toFixed(1)}%` : '';
+    const nossa = s?.clientMin != null ? s.clientMin.toFixed(2).replace('.', ',') : '';
+    const pct   = s?.pctVsCompetitor != null ? `${s.pctVsCompetitor.toFixed(1).replace('.', ',')}%` : '';
     const compPrices = competitors.map(c => {
       const p = compLookup.get(date)?.get(c.slug);
-      return p !== undefined ? p.toFixed(2) : '';
+      return p !== undefined ? p.toFixed(2).replace('.', ',') : '';
     });
     return [date, dia, nossa, pct, ...compPrices];
   });
 
-  const csv  = [headers, ...rows].map(row => row.map(v => `"${v}"`).join(',')).join('\n');
+  const csv  = [headers, ...rows].map(row => row.map(v => `"${v}"`).join(';')).join('\n');
   const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
@@ -440,6 +440,18 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange 
   const summaries    = useMemo(() => buildDaySummaries(visibleRates, selectedPersons), [visibleRates, selectedPersons]);
   const calendarDays = useMemo(() => buildCalendarDays(yearMonth, today), [yearMonth, today]);
 
+  // Min competitor price per day (same pax), precomputed once — avoids filtering
+  // visibleRates inside every day cell during render (was O(days × rates)).
+  const compMinByDate = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of visibleRates) {
+      if (r.type !== 'concorrente' || r.maxPersons !== selectedPersons) continue;
+      const cur = m.get(r.checkinDate);
+      if (cur === undefined || r.priceBrl < cur) m.set(r.checkinDate, r.priceBrl);
+    }
+    return m;
+  }, [visibleRates, selectedPersons]);
+
   const competitors = useMemo(() => {
     const seen = new Map<string, string>();
     for (const r of visibleRates) if (r.type === 'concorrente' && !seen.has(r.slug)) seen.set(r.slug, r.label);
@@ -541,13 +553,13 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange 
 
             {/* Month nav */}
             <div className="flex items-center gap-1">
-              <button onClick={prevMonth} style={{ width: 28, height: 28, border: '1px solid var(--border)', borderRadius: 'var(--rx)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', background:'transparent' }}>
+              <button type="button" aria-label="Mês anterior" onClick={prevMonth} style={{ width: 28, height: 28, border: '1px solid var(--border)', borderRadius: 'var(--rx)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', background:'transparent' }}>
                 <ChevronLeft size={14} style={{ color: 'var(--text-m)' }} />
               </button>
               <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', minWidth: 130, textAlign: 'center' }}>
                 {MONTH_LABELS[m - 1]} {y}
               </span>
-              <button onClick={nextMonth} style={{ width: 28, height: 28, border: '1px solid var(--border)', borderRadius: 'var(--rx)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', background:'transparent' }}>
+              <button type="button" aria-label="Próximo mês" onClick={nextMonth} style={{ width: 28, height: 28, border: '1px solid var(--border)', borderRadius: 'var(--rx)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', background:'transparent' }}>
                 <ChevronRight size={14} style={{ color: 'var(--text-m)' }} />
               </button>
             </div>
@@ -557,10 +569,10 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange 
 
             {/* Calendar / Table toggle */}
             <div className="flex items-center gap-1">
-              <button title="Calendário" style={toggleBtn(view === 'calendar')} onClick={() => setView('calendar')}>
+              <button type="button" title="Calendário" aria-label="Ver em calendário" aria-pressed={view === 'calendar'} style={toggleBtn(view === 'calendar')} onClick={() => setView('calendar')}>
                 <CalendarDays size={14} style={{ color: view === 'calendar' ? 'var(--accent)' : 'var(--text-m)' }} />
               </button>
-              <button title="Tabela" style={toggleBtn(view === 'table')} onClick={() => setView('table')}>
+              <button type="button" title="Tabela" aria-label="Ver em tabela" aria-pressed={view === 'table'} style={toggleBtn(view === 'table')} onClick={() => setView('table')}>
                 <Table2 size={14} style={{ color: view === 'table' ? 'var(--accent)' : 'var(--text-m)' }} />
               </button>
             </div>
@@ -693,8 +705,7 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange 
 
                 // Client has no room at this pax → grey cell regardless of competitors
                 if (noClient) {
-                  const compFiltered = visibleRates.filter(r => r.type === 'concorrente' && r.checkinDate === date && r.maxPersons === selectedPersons);
-                  const compMin = compFiltered.length > 0 ? Math.min(...compFiltered.map(r => r.priceBrl)) : null;
+                  const compMin = compMinByDate.get(date) ?? null;
                   return (
                     <div key={date} style={{
                       background: 'var(--surface-2)',

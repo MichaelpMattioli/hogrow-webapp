@@ -173,7 +173,7 @@ export default function Home() {
         </h1>
 
         {/* KPI tiles */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 28 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 28 }}>
           <StatTile
             icon={<Hotel size={16} color="#fff" />}
             label="Hotéis gerenciados"

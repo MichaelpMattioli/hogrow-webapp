@@ -1,3 +1,4 @@
+import { useEffect, useMemo } from 'react';
 import { X, Users, Star, ExternalLink } from 'lucide-react';
 import type { BookingRate } from '@/data/types';
 
@@ -28,19 +29,34 @@ function buildBookingUrl(slug: string, checkin: string): string {
 }
 
 export default function RateDayModal({ date, rates, anchorTop, onClose }: Props) {
-  // Unique hotels: client first, then competitors alphabetically
-  const hotels = [...new Set(rates.map(r => r.slug))].sort((a, b) => {
-    const ta = rates.find(r => r.slug === a)!.type;
-    const tb = rates.find(r => r.slug === b)!.type;
-    if (ta === 'cliente' && tb !== 'cliente') return -1;
-    if (tb === 'cliente' && ta !== 'cliente') return 1;
-    return (rates.find(r => r.slug === a)!.label).localeCompare(rates.find(r => r.slug === b)!.label);
-  });
+  // Close on Escape for keyboard accessibility.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
 
-  const getLabelForSlug     = (slug: string) => rates.find(r => r.slug === slug)?.label ?? slug;
-  const getTypeForSlug      = (slug: string) => rates.find(r => r.slug === slug)?.type ?? 'concorrente';
-  const getSearchUrlForSlug = (slug: string) =>
-    rates.find(r => r.slug === slug)?.searchUrl ?? buildBookingUrl(slug, date);
+  // Index once by slug (was repeated rates.find() — O(n²) inside the sort).
+  const bySlug = useMemo(() => {
+    const m = new Map<string, BookingRate>();
+    for (const r of rates) if (!m.has(r.slug)) m.set(r.slug, r);
+    return m;
+  }, [rates]);
+
+  // Unique hotels: client first, then competitors alphabetically
+  const hotels = useMemo(() =>
+    [...bySlug.keys()].sort((a, b) => {
+      const ra = bySlug.get(a)!, rb = bySlug.get(b)!;
+      if (ra.type === 'cliente' && rb.type !== 'cliente') return -1;
+      if (rb.type === 'cliente' && ra.type !== 'cliente') return 1;
+      return ra.label.localeCompare(rb.label);
+    }),
+    [bySlug]
+  );
+
+  const getLabelForSlug     = (slug: string) => bySlug.get(slug)?.label ?? slug;
+  const getTypeForSlug      = (slug: string) => bySlug.get(slug)?.type ?? 'concorrente';
+  const getSearchUrlForSlug = (slug: string) => bySlug.get(slug)?.searchUrl ?? buildBookingUrl(slug, date);
 
   const getRooms = (slug: string, persons: number): BookingRate[] => {
     if (persons === 4) return rates.filter(r => r.slug === slug && r.maxPersons >= 4);
@@ -73,6 +89,7 @@ export default function RateDayModal({ date, rates, anchorTop, onClose }: Props)
           backdropFilter: 'blur(4px)',
         }}
         onClick={onClose}
+        aria-hidden="true"
       />
 
       {/* Card — absolute in the document so it aligns with the Rate Shopper section */}
@@ -91,6 +108,9 @@ export default function RateDayModal({ date, rates, anchorTop, onClose }: Props)
           overflow: 'hidden',
         }}
         onClick={e => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="rate-day-modal-title"
       >
         {/* ── Header ── */}
         <div style={{
@@ -103,7 +123,7 @@ export default function RateDayModal({ date, rates, anchorTop, onClose }: Props)
           background: 'var(--surface)',
         }}>
           <div>
-            <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.3px', lineHeight: 1.2 }}>
+            <h3 id="rate-day-modal-title" style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.3px', lineHeight: 1.2 }}>
               Comparativo de Tarifas
             </h3>
             <p style={{
@@ -115,6 +135,7 @@ export default function RateDayModal({ date, rates, anchorTop, onClose }: Props)
           </div>
           <button
             onClick={onClose}
+            aria-label="Fechar comparativo de tarifas"
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               width: 32, height: 32, borderRadius: 8, flexShrink: 0,
@@ -160,7 +181,7 @@ export default function RateDayModal({ date, rates, anchorTop, onClose }: Props)
             </colgroup>
             <thead>
               <tr>
-                <th style={{
+                <th scope="col" style={{
                   padding: '9px 16px', textAlign: 'left',
                   fontSize: 10, fontWeight: 700, letterSpacing: '0.06em',
                   textTransform: 'uppercase', color: 'var(--text-m)',
@@ -171,7 +192,7 @@ export default function RateDayModal({ date, rates, anchorTop, onClose }: Props)
                   Hotel
                 </th>
                 {activeCols.map(p => (
-                  <th key={p} style={{
+                  <th key={p} scope="col" style={{
                     padding: '9px 12px', textAlign: 'center',
                     fontSize: 10, fontWeight: 700, letterSpacing: '0.06em',
                     textTransform: 'uppercase', color: 'var(--text-m)',

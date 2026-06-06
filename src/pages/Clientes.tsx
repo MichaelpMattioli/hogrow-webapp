@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback, memo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useClientesCalendar, useClientesTable, type ClientesPageRow, type MonthlyKpi } from '@/hooks/useSupabase';
 import { ChevronUp, ChevronDown, TrendingUp, TrendingDown, Minus, ChevronsUpDown, Hash } from 'lucide-react';
@@ -151,7 +151,7 @@ function deltaTooltipText(value: number | null, context: DeltaContext) {
   if (Math.abs(value) < 0.05) return `Receita estável vs ${comparison}.`;
 
   const direction = value > 0 ? 'maior' : 'menor';
-  return `Receita ${Math.abs(value).toFixed(1).replace('.', ',')}% ${direction} vs ${comparison}.`;
+  return `Receita ${Math.abs(value).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}% ${direction} vs ${comparison}.`;
 }
 
 function TooltipBadge({ text, children }: { text: string; children: React.ReactNode }) {
@@ -240,7 +240,7 @@ function PctBadge({ value, context, suffix = '%' }: { value: number | null; cont
         fontWeight: 700, color, background: bg, borderRadius: 99, padding: '2px 8px',
       }}>
         <Icon size={8} strokeWidth={2.5} />
-        {value > 0 ? '+' : ''}{value.toFixed(1)}{suffix}
+        {value > 0 ? '+' : ''}{value.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}{suffix}
       </span>
     </TooltipBadge>
   );
@@ -387,15 +387,18 @@ function TableMessage({ children, tone = 'muted' }: { children: React.ReactNode;
   );
 }
 
-function HotelRow({
-  hotel, meta, annualMeta, onClick, idx, full, referenceMonth,
-}: { hotel: HotelSummary; meta?: HotelMeta; annualMeta?: number; onClick: () => void; idx: number; full: boolean; referenceMonth: string }) {
-  const cfg      = STATUS_CONFIG[hotel.status];
+const HotelRow = memo(function HotelRow({
+  hotel, meta, annualMeta, onSelect, idx, full, referenceMonth,
+}: { hotel: HotelSummary; meta?: HotelMeta; annualMeta?: number; onSelect: (id: number) => void; idx: number; full: boolean; referenceMonth: string }) {
+  const cfg      = STATUS_CONFIG[hotel.status] ?? STATUS_CONFIG.critical;
   const metaVal  = meta?.receitaMeta;
   const elapsed  = monthElapsedRatio(referenceMonth) * 100;
 
   const metaPct  = ok(metaVal) && metaVal > 0 && ok(hotel.receitaMesAtual)
     ? (hotel.receitaMesAtual / metaVal) * 100 : null;
+  const annualPct = ok(annualMeta) && annualMeta > 0
+    ? (hotel.receitaYTD / annualMeta) * 100
+    : null;
 
   const momAbs   = ok(hotel.receitaMesAtual) && ok(hotel.receitaMesAnterior)
     ? hotel.receitaMesAtual - hotel.receitaMesAnterior : null;
@@ -419,6 +422,18 @@ function HotelRow({
     : metaPct >= elapsed * 0.7 ? 'color-mix(in srgb,var(--gold) 14%,transparent)'
     : 'var(--red-l)';
 
+  const annualMetaColor = !ok(annualPct) ? 'var(--text-m)'
+    : annualPct >= 100           ? 'var(--green)'
+    : annualPct >= elapsed * 0.9 ? 'var(--green)'
+    : annualPct >= elapsed * 0.7 ? 'var(--gold)'
+    : 'var(--red)';
+
+  const annualMetaBg = !ok(annualPct) ? 'transparent'
+    : annualPct >= 100           ? 'var(--green-l)'
+    : annualPct >= elapsed * 0.9 ? 'var(--green-l)'
+    : annualPct >= elapsed * 0.7 ? 'color-mix(in srgb,var(--gold) 14%,transparent)'
+    : 'var(--red-l)';
+
   const td: React.CSSProperties = {
     padding: '13px 16px',
     borderBottom: '1px solid var(--border-l)',
@@ -432,7 +447,7 @@ function HotelRow({
 
   return (
     <tr
-      onClick={onClick}
+      onClick={() => onSelect(hotel.id)}
       style={{ cursor: 'pointer', transition: 'background 0.1s' }}
       onMouseEnter={e => { e.currentTarget.style.background = 'var(--surface-h)'; }}
       onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
@@ -501,7 +516,7 @@ function HotelRow({
             fontSize: 12, fontWeight: 800, color: metaColor, background: metaBg,
             borderRadius: 99, padding: '4px 10px',
           }}>
-            {metaPct.toFixed(1)}%
+            {metaPct.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
           </span>
         ) : (
           <span style={{ fontSize: 11, color: 'var(--border)' }}>—</span>
@@ -536,7 +551,18 @@ function HotelRow({
         ...tdNum,
         color: 'var(--accent-d)',
       }}>
-        {fmtRec(hotel.receitaYTD, full)}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5 }}>
+          <span>{fmtRec(hotel.receitaYTD, full)}</span>
+          {ok(annualPct) && (
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 3,
+              fontSize: 12, fontWeight: 800, color: annualMetaColor, background: annualMetaBg,
+              borderRadius: 99, padding: '4px 10px',
+            }}>
+              {annualPct.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
+            </span>
+          )}
+        </div>
       </td>
 
       {/* Delta acumulado */}
@@ -545,7 +571,7 @@ function HotelRow({
       </td>
     </tr>
   );
-}
+});
 
 // ─── Sort value ───────────────────────────────────────────────────────────────
 
@@ -632,6 +658,7 @@ export default function Clientes() {
   const navigate      = useNavigate();
   const [searchParams] = useSearchParams();
   const q = (searchParams.get('q') ?? '').toLowerCase().trim();
+  const handleSelectHotel = useCallback((id: number) => navigate(`/clientes/${id}`), [navigate]);
 
   const {
     calendar,
@@ -897,7 +924,7 @@ export default function Clientes() {
                       hotel={h}
                       meta={metaMap.get(h.id)}
                       annualMeta={annualMetaMap.get(h.id)}
-                      onClick={() => navigate(`/clientes/${h.id}`)}
+                      onSelect={handleSelectHotel}
                       idx={i}
                       full={fullNumbers}
                       referenceMonth={selectedMonth}
