@@ -75,21 +75,7 @@ function parseBookingRate(r: Record<string, unknown>): BookingRate {
   };
 }
 
-function keepLatestBookingRatesByHotelDate(rates: BookingRate[], minDate: string): BookingRate[] {
-  const latestBySlugDate = new Map<string, string>();
-  for (const r of rates) {
-    const key = `${r.slug}|${r.checkinDate}`;
-    const cur = latestBySlugDate.get(key);
-    if (!cur || r.scrapedAt > cur) latestBySlugDate.set(key, r.scrapedAt);
-  }
-
-  return rates.filter(r => {
-    const key = `${r.slug}|${r.checkinDate}`;
-    return r.checkinDate >= minDate && r.scrapedAt === latestBySlugDate.get(key);
-  });
-}
-
-async function fetchBookingRatesRange(hotelId: number, from: string, to: string, keepLatest = true): Promise<BookingRate[]> {
+async function fetchBookingRatesRange(hotelId: number, from: string, to: string): Promise<BookingRate[]> {
   if (!hotelId || from > to) return [];
 
   const pageSize = 1000;
@@ -98,7 +84,7 @@ async function fetchBookingRatesRange(hotelId: number, from: string, to: string,
 
   while (true) {
     const { data, error } = await supabase
-      .from('vw_booking_rates')
+      .from('vw_booking_rates_latest')
       .select('*')
       .eq('hotel_id', hotelId)
       .eq('booking_info_ativo', true)
@@ -114,8 +100,9 @@ async function fetchBookingRatesRange(hotelId: number, from: string, to: string,
     offset += pageSize;
   }
 
-  const rates = rawRows.map(parseBookingRate).filter(r => r.checkinDate >= from);
-  return keepLatest ? keepLatestBookingRatesByHotelDate(rates, from) : rates;
+  // vw_booking_rates_latest já devolve só a última extração por (concorrente, checkin),
+  // então não há dedup no cliente.
+  return rawRows.map(parseBookingRate).filter(r => r.checkinDate >= from);
 }
 
 // ─── Fetch all hotels via pre-aggregated view ────────────────────────
@@ -273,6 +260,11 @@ export function useBookingRates(hotelId: number, yearMonth: string) {
       const to = `${yearMonth}-${String(lastDay).padStart(2, '0')}`;
       return fetchBookingRatesRange(hotelId, from, to);
     },
+    // Sem cache no shopper: sempre busca o estado atual (o on-demand muda os preços fora
+    // do ciclo das 09:30, então não dá pra servir cache "fresh" como no resto do app).
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnMount: 'always',
   });
 
   return { rates: data ?? [], loading: isLoading };
@@ -296,9 +288,12 @@ export function useBookingRatesForMonths(hotelId: number, yearMonths: string[]) 
       const from = monthStart < today ? today : monthStart;
       const to = `${lastMonth}-${String(lastDay).padStart(2, '0')}`;
 
-      const loaded = await fetchBookingRatesRange(hotelId, from, to, false);
+      const loaded = await fetchBookingRatesRange(hotelId, from, to);
       return loaded.filter(r => months.includes(r.checkinDate.slice(0, 7)));
     },
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnMount: 'always',
   });
 
   return { rates: data ?? [], loading: isLoading };

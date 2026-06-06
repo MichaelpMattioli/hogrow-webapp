@@ -10,7 +10,17 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <PersistQueryClientProvider
       client={queryClient}
-      persistOptions={{ persister, maxAge: 24 * 60 * 60 * 1000, buster: cacheBuster }}
+      persistOptions={{
+        persister,
+        maxAge: 24 * 60 * 60 * 1000,
+        buster: cacheBuster,
+        // Não persiste o rate-shopper (cache removido): cada visita busca o estado atual.
+        dehydrateOptions: {
+          shouldDehydrateQuery: (q) =>
+            q.state.status === 'success' &&
+            !String(q.queryKey?.[0] ?? '').startsWith('booking-rates'),
+        },
+      }}
     >
       <BrowserRouter>
         <App />
