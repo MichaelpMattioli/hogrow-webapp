@@ -579,11 +579,15 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange,
                 <><RefreshCw size={10} /> Atualizar agora</>
               )}
             </button>
-            {(shopper.run?.status === 'error' || (shopper.rejection?.reason.startsWith('erro'))) && (
+            {shopper.busy ? (
+              <span style={{ fontSize: 10, color: 'var(--amber)', fontWeight: 600 }}>
+                ocupado — tente em instantes
+              </span>
+            ) : (shopper.run?.status === 'error' || shopper.rejection?.reason.startsWith('erro')) ? (
               <span title={shopper.run?.error_msg ?? ''} style={{ fontSize: 10, color: 'var(--red)', fontWeight: 600 }}>
                 falhou — tente de novo
               </span>
-            )}
+            ) : null}
 
             {/* Month nav */}
             <div className="flex items-center gap-1">
@@ -675,7 +679,8 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange,
           </div>
         )}
 
-        {/* ── Content ── */}
+        {/* ── Content (com overlay de atualização) ── */}
+        <div style={{ position: 'relative' }}>
         {loading ? (
           <div className="flex items-center justify-center" style={{ padding: '48px 0' }}>
             <span style={{ fontSize: 12, color: 'var(--text-m)' }}>Carregando tarifas...</span>
@@ -828,6 +833,35 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange,
             </div>
           </>
         )}
+
+          {/* Overlay de atualização: escurece os dados (ainda da coleta anterior) durante o refresh */}
+          {shopper.isActive && (
+            <div style={{
+              position: 'absolute', inset: 0, borderRadius: 'var(--rx)',
+              background: 'rgba(255,255,255,0.74)', backdropFilter: 'blur(1.5px)',
+              WebkitBackdropFilter: 'blur(1.5px)',
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+              gap: 12, zIndex: 5, textAlign: 'center', padding: 24,
+            }}>
+              <Loader2 size={26} className="animate-spin" style={{ color: 'var(--accent)' }} />
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>
+                Atualizando preços do Booking{shopperPct != null ? ` — ${shopperPct}%` : '…'}
+              </div>
+              <div style={{
+                width: 'min(280px, 70%)', height: 7, borderRadius: 999,
+                background: 'var(--surface-2)', overflow: 'hidden', border: '1px solid var(--border-l)',
+              }}>
+                <div style={{
+                  width: `${shopperPct ?? 5}%`, height: '100%',
+                  background: 'var(--accent)', borderRadius: 999, transition: 'width 0.4s ease',
+                }} />
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-m)', maxWidth: 320 }}>
+                Os valores exibidos ainda são da última coleta — serão substituídos ao concluir.
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {selectedDate && (

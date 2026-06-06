@@ -32,6 +32,7 @@ export interface ShopperRunState {
   rejection: { reason: string; retryAfter: number | null } | null;
   cooldownUntil: number | null;            // epoch ms (botão indisponível até lá)
   dailyLimited: boolean;
+  busy: boolean;                           // worker no teto de runs simultâneos (retryable)
 }
 
 export function useShopperRun(hotelId: number): ShopperRunState {
@@ -136,5 +137,6 @@ export function useShopperRun(hotelId: number): ShopperRunState {
     rejection,
     cooldownUntil,
     dailyLimited: rejection?.reason === 'daily_limit_3',
+    busy: run?.status === 'error' && run?.error_msg === 'worker_busy',
   };
 }
