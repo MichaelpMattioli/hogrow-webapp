@@ -23,6 +23,7 @@ export interface ShopperRunRow {
 }
 
 const COOLDOWN_MS = 15 * 60 * 1000; // 15 min entre coletas (espelha o RPC; o limite REAL é imposto no back-end)
+const DAILY_LIMIT = 7;              // máx 7/dia por hotel (espelha o RPC)
 const POLL_MS = 2500;
 
 export interface ShopperRunState {
@@ -32,6 +33,8 @@ export interface ShopperRunState {
   rejection: { reason: string; retryAfter: number | null } | null;
   cooldownUntil: number | null;            // epoch ms (botão indisponível até lá)
   dailyLimited: boolean;
+  dailyUsed: number;                       // coletas de hoje (não-erro) deste hotel
+  dailyLimit: number;                      // teto diário (espelha o RPC = 7)
   busy: boolean;                           // worker no teto de runs simultâneos (retryable)
 }
 
@@ -41,6 +44,22 @@ export function useShopperRun(hotelId: number): ShopperRunState {
   const [run, setRun] = useState<ShopperRunRow | null>(null);
   const [triggering, setTriggering] = useState(false);
   const [rejection, setRejection] = useState<{ reason: string; retryAfter: number | null } | null>(null);
+  const [dailyUsed, setDailyUsed] = useState(0);
+
+  // Contagem de coletas de HOJE (não-erro) deste hotel — espelha a regra do RPC para
+  // exibir "X/7". Assume fuso do navegador = BRT (como o resto do app); o limite REAL é
+  // imposto no back-end (o front só mostra os números).
+  const refreshDaily = useCallback(async () => {
+    const start = new Date(); start.setHours(0, 0, 0, 0);
+    const { count } = await supabase
+      .from('shopper_runs')
+      .select('id', { count: 'exact', head: true })
+      .eq('hotel_id', hotelId)
+      .neq('status', 'error')
+      .gte('requested_at', start.toISOString());
+    setDailyUsed(count ?? 0);
+  }, [hotelId]);
+  useEffect(() => { void refreshDaily(); }, [refreshDaily]);
 
   // Último run do hotel: define cooldown / retoma polling se ainda estiver rodando.
   useEffect(() => {
@@ -74,6 +93,7 @@ export function useShopperRun(hotelId: number): ShopperRunState {
       setRun(data as ShopperRunRow);
       if (data.status === 'done' || data.status === 'error') {
         setActiveRunId(null);
+        void refreshDaily();
         if (data.status === 'done') {
           // os hooks reais do shopper no ClienteDetalhe usam estas chaves:
           qc.invalidateQueries({ queryKey: ['cliente-rate-shopper', hotelId] });
@@ -87,7 +107,7 @@ export function useShopperRun(hotelId: number): ShopperRunState {
     void tick();
     const iv = setInterval(tick, POLL_MS);
     return () => { stop = true; clearInterval(iv); };
-  }, [activeRunId, hotelId, qc]);
+  }, [activeRunId, hotelId, qc, refreshDaily]);
 
   const trigger = useCallback(async () => {
     if (triggering || activeRunId) return;
@@ -116,13 +136,14 @@ export function useShopperRun(hotelId: number): ShopperRunState {
           fetches_total: null, fetches_done: 0, rows_upserted: null, progress_pct: 0,
           data_extracao: null, error_msg: null, note: null,
         });
+        void refreshDaily();
       }
     } catch {
       setRejection({ reason: 'erro_rede', retryAfter: null });
     } finally {
       setTriggering(false);
     }
-  }, [hotelId, triggering, activeRunId]);
+  }, [hotelId, triggering, activeRunId, refreshDaily]);
 
   const isActive = triggering || run?.status === 'queued' || run?.status === 'running';
 
@@ -141,6 +162,8 @@ export function useShopperRun(hotelId: number): ShopperRunState {
     rejection,
     cooldownUntil,
     dailyLimited: rejection?.reason === 'daily_limit',
+    dailyUsed,
+    dailyLimit: DAILY_LIMIT,
     busy: run?.status === 'error' && run?.error_msg === 'worker_busy',
   };
 }

@@ -492,7 +492,8 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange,
   const nextMonth = () => { const nm=m===12?1:m+1;  const ny=m===12?y+1:y; onMonthChange(`${ny}-${String(nm).padStart(2,'0')}`); };
 
   const cooldownLeftMs = shopper.cooldownUntil ? Math.max(0, shopper.cooldownUntil - nowTick) : 0;
-  const updateDisabled = shopper.isActive || cooldownLeftMs > 0 || shopper.dailyLimited;
+  const dailyReached = shopper.dailyLimited || shopper.dailyUsed >= shopper.dailyLimit;
+  const updateDisabled = shopper.isActive || cooldownLeftMs > 0 || dailyReached;
   const shopperPct = shopper.run?.progress_pct != null ? Math.round(Number(shopper.run.progress_pct)) : null;
 
   const selectedDayRates = selectedDate ? visibleRates.filter(r => r.checkinDate === selectedDate) : [];
@@ -505,9 +506,9 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange,
     background: active ? 'rgba(var(--accent-rgb),0.08)' : 'transparent',
   });
 
-  // Botão "Atualizar agora" (on-demand). big = versão proeminente (header/estado vazio);
-  // compacto = dentro do alerta de desatualizado. Faz o mesmo: dispara o run do hotel.
-  const updateButton = (big: boolean) => (
+  // Botão "Atualizar agora" (on-demand). big = fonte/padding maiores; full = ocupa 100%.
+  // Estados (precedência): rodando > limite diário (7/7) > cooldown (15min) > normal.
+  const updateButton = (big: boolean, full = false) => (
     <button
       type="button"
       onClick={() => { if (!updateDisabled) void shopper.trigger(); }}
@@ -515,12 +516,13 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange,
       aria-label="Atualizar preços do rate shopper agora"
       title={
         shopper.isActive ? 'Buscando preços atualizados…'
-        : shopper.dailyLimited ? 'Limite de 7 atualizações por dia atingido'
+        : dailyReached ? `Limite de ${shopper.dailyLimit} atualizações por dia atingido — volta amanhã`
         : cooldownLeftMs > 0 ? `Disponível em ${fmtCountdown(cooldownLeftMs)} (mín. 15 min entre coletas)`
         : 'Buscar preços atualizados do Booking agora'
       }
       style={{
-        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+        display: full ? 'flex' : 'inline-flex', width: full ? '100%' : undefined,
+        alignItems: 'center', justifyContent: 'center', gap: 7,
         padding: big ? '9px 16px' : '6px 12px',
         borderRadius: 'var(--rx)',
         border: `1px solid ${updateDisabled && !shopper.isActive ? 'var(--border)' : 'var(--accent)'}`,
@@ -534,8 +536,8 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange,
     >
       {shopper.isActive ? (
         <><Loader2 size={big ? 14 : 11} className="animate-spin" /> Atualizando{shopperPct != null ? ` ${shopperPct}%` : '…'}</>
-      ) : shopper.dailyLimited ? (
-        <><AlertTriangle size={big ? 13 : 10} /> Limite diário</>
+      ) : dailyReached ? (
+        <><AlertTriangle size={big ? 13 : 10} /> Limite {shopper.dailyUsed}/{shopper.dailyLimit}</>
       ) : cooldownLeftMs > 0 ? (
         <><Clock size={big ? 13 : 10} /> Em {fmtCountdown(cooldownLeftMs)}</>
       ) : (
@@ -543,6 +545,38 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange,
       )}
     </button>
   );
+
+  // Cluster de atualização no header: status (última coleta / desatualizado) + X/7 hoje
+  // + 1 único botão. Fica âmbar quando os dados são de outro dia. Só renderiza com dados.
+  const updateCluster = () => {
+    const amber = shopperNeedsUpdate;
+    return (
+      <div style={{
+        display: 'flex', flexDirection: 'column', gap: 6, minWidth: 176,
+        padding: '7px 9px', borderRadius: 'var(--rx)',
+        background: amber ? 'var(--amber-l)' : 'var(--surface-2)',
+        border: `1px solid ${amber ? '#FDE68A' : 'var(--border-l)'}`,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, lineHeight: 1.25 }}>
+          {amber
+            ? <AlertTriangle size={12} style={{ color: 'var(--amber)', flexShrink: 0 }} />
+            : <RefreshCw size={12} style={{ color: 'var(--green)', flexShrink: 0 }} />}
+          <span style={{ color: 'var(--text-m)', fontWeight: 600 }}>
+            {amber
+              ? <><span style={{ color: 'var(--amber)', fontWeight: 750 }}>Desatualizado</span>{lastScrapedDate ? <> · de {fmtDateOnly(lastScrapedDate)}</> : null}</>
+              : <>Coletado <strong style={{ color: 'var(--text)', fontWeight: 750 }}>{fmtScraped(lastScrapedAt!)}</strong></>}
+            <span> · <strong style={{ color: 'var(--text)', fontWeight: 700 }}>{shopper.dailyUsed}/{shopper.dailyLimit}</strong> hoje</span>
+          </span>
+        </div>
+        {updateButton(false, true)}
+        {(shopper.busy || shopper.run?.status === 'error' || shopper.rejection?.reason.startsWith('erro')) && (
+          <span style={{ fontSize: 10, fontWeight: 600, color: shopper.busy ? 'var(--amber)' : 'var(--red)' }}>
+            {shopper.busy ? 'ocupado — tente em instantes' : 'falhou — tente de novo'}
+          </span>
+        )}
+      </div>
+    );
+  };
 
   return (
     <>
@@ -562,38 +596,8 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange,
           </div>
 
           <div className="flex items-center gap-2">
-            {lastScrapedAt && (
-              <div style={{ display:'flex', alignItems:'center', gap:6, flexWrap:'wrap', justifyContent:'flex-end' }}>
-                <div className="flex items-center gap-1.5" style={{
-                  padding: '6px 11px', borderRadius: 'var(--rx)',
-                  background: shopperNeedsUpdate ? 'var(--amber-l)' : 'var(--green-l)',
-                  border: `1px solid ${shopperNeedsUpdate ? '#FDE68A' : '#A7F3D0'}`,
-                }}>
-                  {shopperNeedsUpdate ? (
-                    <AlertTriangle size={12} style={{ color: 'var(--amber)', flexShrink: 0 }} />
-                  ) : (
-                    <RefreshCw size={12} style={{ color: 'var(--green)', flexShrink: 0 }} />
-                  )}
-                  <span style={{ fontSize: 11.5, color: 'var(--text-m)', fontWeight: 600 }}>
-                    Última coleta: <strong style={{ color: 'var(--text)', fontWeight: 750 }}>{fmtScraped(lastScrapedAt)}</strong>
-                    {shopperNeedsUpdate ? <span style={{ color: 'var(--amber)', fontWeight: 700 }}> · desatualizado</span> : null}
-                  </span>
-                </div>
-
-              </div>
-            )}
-
-            {/* Atualizar agora (on-demand): CTA primário, faz o mesmo do alerta/estado vazio */}
-            {updateButton(true)}
-            {shopper.busy ? (
-              <span style={{ fontSize: 10, color: 'var(--amber)', fontWeight: 600 }}>
-                ocupado — tente em instantes
-              </span>
-            ) : (shopper.run?.status === 'error' || shopper.rejection?.reason.startsWith('erro')) ? (
-              <span title={shopper.run?.error_msg ?? ''} style={{ fontSize: 10, color: 'var(--red)', fontWeight: 600 }}>
-                falhou — tente de novo
-              </span>
-            ) : null}
+            {/* Cluster único de atualização (status + X/7 + 1 botão); âmbar se de outro dia */}
+            {lastScrapedAt && updateCluster()}
 
             {/* Month nav */}
             <div className="flex items-center gap-1">
@@ -641,25 +645,6 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange,
         </div>
 
         {/* ── Header row 2: Pax filter ── */}
-        {shopperNeedsUpdate && lastScrapedDate && (
-          <div style={{
-            display:'flex', alignItems:'center', gap:12, flexWrap:'wrap',
-            marginBottom:14, padding:'12px 14px', borderRadius:'var(--rx)',
-            background:'var(--amber-l)', border:'1px solid #FDE68A',
-          }}>
-            <AlertTriangle size={18} style={{ color:'var(--amber)', flexShrink:0 }} />
-            <div style={{ flex:1, minWidth:200 }}>
-              <div style={{ fontSize:12.5, fontWeight:750, color:'var(--text)' }}>
-                Preços de {fmtDateOnly(lastScrapedDate)} — desatualizados
-              </div>
-              <div style={{ fontSize:11, color:'var(--text-m)', marginTop:2 }}>
-                Os preços do Booking mudam a qualquer hora. Atualize para os de hoje ({fmtDateOnly(today)}).
-              </div>
-            </div>
-            {updateButton(false)}
-          </div>
-        )}
-
         {hasAnyData && allPersonsOptions.length > 0 && (
           <div style={{
             display: 'flex', alignItems: 'center',
@@ -700,6 +685,9 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange,
               O rate shopper é sob demanda — clique para buscar os preços do Booking agora.
             </span>
             {updateButton(true)}
+            <span style={{ fontSize: 10.5, color: 'var(--text-m)' }}>
+              {shopper.dailyUsed}/{shopper.dailyLimit} atualizações hoje · mín. 15 min entre coletas
+            </span>
           </div>
         ) : view === 'table' ? (
           <TableView
