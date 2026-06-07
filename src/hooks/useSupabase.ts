@@ -776,6 +776,16 @@ export function useMetasAnual(ano: number) {
 }
 
 // ─── Log de uploads de metas via Excel (auditoria) ───────────────────
+export interface MetaUploadIssue {
+  level: 'erro' | 'alerta' | 'info';
+  code: string;
+  msg: string;
+  hotelId?: number;
+  hotelNome?: string;
+  mes?: number;
+  cat?: string;
+}
+
 export interface MetaUploadLogRow {
   id: string;
   createdAt: string;
@@ -788,6 +798,9 @@ export interface MetaUploadLogRow {
   versionado: boolean;
   errorMsg: string | null;
   storagePath: string | null;
+  erros: number;
+  alertas: number;
+  issues: MetaUploadIssue[];
 }
 
 export function useMetasUploadLog() {
@@ -796,7 +809,7 @@ export function useMetasUploadLog() {
     queryFn: async (): Promise<MetaUploadLogRow[]> => {
       const { data, error } = await supabase
         .from('metas_upload_log')
-        .select('id,created_at,ano,filename,status,metas_total,upserted,ignored,versionado,error_msg,storage_path')
+        .select('id,created_at,ano,filename,status,metas_total,upserted,ignored,versionado,error_msg,storage_path,issues,erros,alertas')
         .order('created_at', { ascending: false })
         .limit(30);
       if (error) throw error;
@@ -812,6 +825,9 @@ export function useMetasUploadLog() {
         versionado: Boolean(r.versionado),
         errorMsg: (r.error_msg as string | null) ?? null,
         storagePath: (r.storage_path as string | null) ?? null,
+        erros: num(r.erros),
+        alertas: num(r.alertas),
+        issues: Array.isArray(r.issues) ? (r.issues as MetaUploadIssue[]) : [],
       }));
     },
   });

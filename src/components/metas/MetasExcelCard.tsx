@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
-import { AlertCircle, Check, Download, FileSpreadsheet, Loader2, Upload } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Check, Download, FileSpreadsheet, Loader2, Upload } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import type { MetaAnualRow } from '@/hooks/useSupabase';
+import type { MetaAnualRow, MetaUploadIssue } from '@/hooks/useSupabase';
 
 const MES_ABBR = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 const CAT_ROWS = [
@@ -10,7 +10,12 @@ const CAT_ROWS = [
   { label: 'Diária Média', key: 'dmMeta' as const },
 ];
 
-interface MetaIn { hotelId: number; mes: number; receita: unknown; occ: unknown; dm: unknown }
+type Level = 'ok' | 'parcial' | 'erro';
+const TONE: Record<Level, { bg: string; color: string; border: string; Icon: typeof Check }> = {
+  ok:      { bg: 'var(--green-l)', color: 'var(--green)', border: '#A7F3D0', Icon: Check },
+  parcial: { bg: 'var(--gold-l)',  color: 'var(--gold)',  border: '#FDE68A', Icon: AlertTriangle },
+  erro:    { bg: 'var(--red-l)',   color: 'var(--red)',   border: '#FECACA', Icon: AlertCircle },
+};
 
 // Gera o template no MESMO formato da tabela (ID, Cliente, Categoria, Jan..Dez), com metas atuais.
 // xlsx é carregado sob demanda (dynamic import) para não pesar o bundle da página.
@@ -41,71 +46,53 @@ async function downloadTemplate(rows: MetaAnualRow[], ano: number) {
   XLSX.writeFile(wb, `template-metas-${ano}.xlsx`);
 }
 
-async function parseFile(file: File): Promise<{ metas: MetaIn[]; fileBase64: string }> {
-  const XLSX = await import('xlsx');
-  const buf = await file.arrayBuffer();
-  const wb = XLSX.read(buf, { type: 'array' });
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  const aoa = XLSX.utils.sheet_to_json<(string | number)[]>(ws, { header: 1, blankrows: false });
-
-  const byHotel = new Map<number, { receita?: unknown[]; occ?: unknown[]; dm?: unknown[] }>();
-  for (let i = 1; i < aoa.length; i++) {
-    const row = aoa[i];
-    if (!row || row.length < 3) continue;
-    const id = Number(row[0]);
-    if (!Number.isFinite(id)) continue;
-    const cat = String(row[2] ?? '').trim().toLowerCase();
-    const months = Array.from({ length: 12 }, (_, m) => row[3 + m]);
-    if (!byHotel.has(id)) byHotel.set(id, {});
-    const h = byHotel.get(id)!;
-    if (cat.includes('receita')) h.receita = months;
-    else if (cat.includes('ocup')) h.occ = months;
-    else if (cat.includes('di')) h.dm = months;
-  }
-
-  const metas: MetaIn[] = [];
-  byHotel.forEach((h, id) => {
-    for (let mes = 1; mes <= 12; mes++) {
-      metas.push({
-        hotelId: id, mes,
-        receita: h.receita?.[mes - 1] ?? null,
-        occ: h.occ?.[mes - 1] ?? null,
-        dm: h.dm?.[mes - 1] ?? null,
-      });
-    }
-  });
-
-  const bytes = new Uint8Array(buf);
+// O parsing/validação do .xlsx é feito no servidor (Edge Function). Aqui só mandamos o arquivo bruto.
+async function fileToBase64(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
   let bin = '';
   const CH = 0x8000;
   for (let i = 0; i < bytes.length; i += CH) bin += String.fromCharCode(...bytes.subarray(i, i + CH));
-  return { metas, fileBase64: btoa(bin) };
+  return btoa(bin);
 }
 
 export default function MetasExcelCard({ ano, rows, onDone }: { ano: number; rows: MetaAnualRow[]; onDone: () => void }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [result, setResult] = useState<{ level: Level; msg: string } | null>(null);
 
   async function handleFile(file: File | undefined) {
     if (!file) return;
     setBusy(true);
     setResult(null);
     try {
-      const { metas, fileBase64 } = await parseFile(file);
+      const fileBase64 = await fileToBase64(file);
       const { data, error } = await supabase.functions.invoke('metas-upload', {
-        body: { ano, metas, filename: file.name, fileBase64 },
+        body: { ano, filename: file.name, fileBase64 },
       });
       if (error) throw error;
-      const d = (data ?? {}) as { upserted?: number; ignored?: number; storagePath?: string | null };
-      const versionado = typeof d.storagePath === 'string' && !d.storagePath.startsWith('ERRO');
-      setResult({
-        ok: true,
-        msg: `${d.upserted ?? 0} metas atualizadas${d.ignored ? ` · ${d.ignored} ignoradas` : ''} · ${versionado ? 'arquivo versionado no Storage' : 'arquivo não versionado'}.`,
-      });
+      const d = (data ?? {}) as {
+        status?: Level; upserted?: number; ignored?: number; versionado?: boolean; issues?: MetaUploadIssue[];
+      };
+      const status: Level = d.status ?? 'ok';
+      const issues = d.issues ?? [];
+      const alertas = issues.filter(i => i.level === 'alerta').length;
+      if (status === 'erro') {
+        const firstErro = issues.find(i => i.level === 'erro');
+        setResult({ level: 'erro', msg: firstErro?.msg ?? 'Não foi possível processar o arquivo.' });
+      } else if (status === 'parcial') {
+        setResult({
+          level: 'parcial',
+          msg: `${d.upserted ?? 0} metas atualizadas · ${d.ignored ?? 0} ignoradas${d.versionado === false ? ' · arquivo não versionado' : ''}.`,
+        });
+      } else {
+        setResult({
+          level: 'ok',
+          msg: `${d.upserted ?? 0} metas atualizadas${alertas ? ` · ${alertas} aviso(s)` : ''} · arquivo versionado no Storage.`,
+        });
+      }
       onDone();
     } catch (e) {
-      setResult({ ok: false, msg: (e as Error).message || 'Falha ao processar o Excel.' });
+      setResult({ level: 'erro', msg: (e as Error).message || 'Falha ao enviar o Excel.' });
     } finally {
       setBusy(false);
       if (fileRef.current) fileRef.current.value = '';
@@ -120,6 +107,8 @@ export default function MetasExcelCard({ ano, rows, onDone }: { ano: number; row
     color: primary ? '#fff' : 'var(--text)',
     opacity: busy ? 0.7 : 1, transition: 'all .12s',
   });
+
+  const tone = result ? TONE[result.level] : null;
 
   return (
     <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r)', padding: 18, boxShadow: 'var(--sh)' }}>
@@ -139,7 +128,7 @@ export default function MetasExcelCard({ ano, rows, onDone }: { ano: number; row
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <button type="button" style={btn(false)} disabled={busy} onClick={async () => {
             setBusy(true);
-            try { await downloadTemplate(rows, ano); } catch (e) { setResult({ ok: false, msg: (e as Error).message }); } finally { setBusy(false); }
+            try { await downloadTemplate(rows, ano); } catch (e) { setResult({ level: 'erro', msg: (e as Error).message }); } finally { setBusy(false); }
           }}>
             <Download size={15} /> Baixar template {ano}
           </button>
@@ -155,15 +144,13 @@ export default function MetasExcelCard({ ano, rows, onDone }: { ano: number; row
         </div>
       </div>
 
-      {result && (
+      {result && tone && (
         <div style={{
           marginTop: 14, display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 'var(--rx)',
           fontSize: 12.5, fontWeight: 700,
-          background: result.ok ? 'var(--green-l)' : 'var(--red-l)',
-          color: result.ok ? 'var(--green)' : 'var(--red)',
-          border: `1px solid ${result.ok ? '#A7F3D0' : '#FECACA'}`,
+          background: tone.bg, color: tone.color, border: `1px solid ${tone.border}`,
         }}>
-          {result.ok ? <Check size={15} /> : <AlertCircle size={15} />}
+          <tone.Icon size={15} />
           {result.msg}
         </div>
       )}

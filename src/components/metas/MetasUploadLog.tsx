@@ -16,14 +16,18 @@ function fmtDateTime(iso: string): string {
   });
 }
 
-// Mensagem amigável da coluna "Observação" (os tipos de erro serão detalhados depois — backlog #24).
+// Mensagem amigável da coluna "Observação", a partir das issues estruturadas (Fase 1+).
+// O detalhamento completo das issues num modal vem na Fase 4 (ver docs/metas-upload-validacao.md).
 function observacao(r: MetaUploadLogRow): string {
-  if (r.errorMsg) return r.errorMsg;
-  if (r.status === 'parcial') {
-    if (r.ignored > 0 && !r.versionado) return `${r.ignored} ignorada(s) · arquivo não versionado`;
-    if (r.ignored > 0) return `${r.ignored} meta(s) ignorada(s)`;
-    if (!r.versionado) return 'arquivo não versionado no Storage';
-  }
+  // Defensivo: linhas vindas do cache persistido (anteriores à coluna issues) podem não ter o campo.
+  const firstErro = (r.issues ?? []).find(i => i.level === 'erro');
+  if (firstErro) return firstErro.msg;
+  const parts: string[] = [];
+  if ((r.alertas ?? 0) > 0) parts.push(`${r.alertas} alerta(s)`);
+  if (r.ignored > 0) parts.push(`${r.ignored} ignorada(s)`);
+  if (!r.versionado && r.status !== 'erro' && r.upserted > 0) parts.push('arquivo não versionado');
+  if (parts.length) return parts.join(' · ');
+  if (r.errorMsg) return r.errorMsg; // legado (linhas antigas sem issues)
   return '—';
 }
 
