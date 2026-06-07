@@ -573,19 +573,18 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange,
             </span>
             {amber && <span style={{ fontSize: 11.5, color: 'var(--amber)', fontWeight: 600 }}>— atualize para hoje</span>}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-m)', paddingLeft: 23 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-m)', flexWrap: 'wrap', paddingLeft: 23 }}>
             <span><strong style={{ color: 'var(--text)', fontWeight: 700 }}>{dailyRemaining}</strong> de {shopper.dailyLimit} coletas restantes hoje</span>
             {helpQuota}
+            {(shopper.busy || shopper.run?.status === 'error' || shopper.rejection?.reason.startsWith('erro')) && (
+              <span style={{ fontSize: 10.5, fontWeight: 600, color: shopper.busy ? 'var(--amber)' : 'var(--red)' }}>
+                {shopper.busy ? '· ocupado, tente já já' : '· falhou, tente de novo'}
+              </span>
+            )}
           </div>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
-          {updateButton(true)}
-          {(shopper.busy || shopper.run?.status === 'error' || shopper.rejection?.reason.startsWith('erro')) && (
-            <span style={{ fontSize: 10, fontWeight: 600, color: shopper.busy ? 'var(--amber)' : 'var(--red)' }}>
-              {shopper.busy ? 'ocupado — tente em instantes' : 'falhou — tente de novo'}
-            </span>
-          )}
-        </div>
+        {/* Botão só quando ATUALIZADO; se desatualizado, o botão fica no overlay central (1 botão só) */}
+        {!amber && <div style={{ flexShrink: 0 }}>{updateButton(true)}</div>}
       </div>
     );
   };
@@ -867,6 +866,26 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange,
               <div style={{ fontSize: 11, color: 'var(--text-m)', maxWidth: 320 }}>
                 Os valores exibidos ainda são da última coleta — serão substituídos ao concluir.
               </div>
+            </div>
+          )}
+
+          {/* Overlay de DESATUALIZADO: esmaece os preços de outro dia + CTA central (1 botão só) */}
+          {shopperNeedsUpdate && hasAnyData && !shopper.isActive && !loading && (
+            <div style={{
+              position: 'absolute', inset: 0, borderRadius: 'var(--rx)',
+              background: 'rgba(255,255,255,0.78)', backdropFilter: 'blur(2px)',
+              WebkitBackdropFilter: 'blur(2px)',
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+              gap: 12, zIndex: 4, textAlign: 'center', padding: 24,
+            }}>
+              <AlertTriangle size={26} style={{ color: 'var(--amber)' }} />
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>
+                Preços desatualizados{lastScrapedDate ? ` — coletados em ${lastScrapedDate.slice(8, 10)}/${lastScrapedDate.slice(5, 7)}` : ''}
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--text-m)', maxWidth: 340 }}>
+                Os valores abaixo não são de hoje. Atualize para ver os preços atuais do Booking.
+              </div>
+              {updateButton(true)}
             </div>
           )}
         </div>
