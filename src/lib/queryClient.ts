@@ -70,7 +70,9 @@ export const queryClient = new QueryClient({
 /** Persist the cache to sessionStorage so a reload within the same cycle is instant. */
 export const persister = createSyncStoragePersister({
   storage: typeof window !== 'undefined' ? window.sessionStorage : undefined!,
-  key: 'hogrow-query-cache',
+  // v2: bump da chave — descarta snapshots antigos do sessionStorage (que ainda
+  // persistiam o rate-shopper) numa só tacada quando esta versão subir.
+  key: 'hogrow-query-cache-v2',
 });
 
 /** Daily buster keyed to the 09:30 data cycle: a new cycle discards the persisted cache. */
