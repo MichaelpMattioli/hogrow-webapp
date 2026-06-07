@@ -775,6 +775,50 @@ export function useMetasAnual(ano: number) {
   return { rows: data ?? [], loading: isLoading, error: errMsg(error), reload };
 }
 
+// ─── Log de uploads de metas via Excel (auditoria) ───────────────────
+export interface MetaUploadLogRow {
+  id: string;
+  createdAt: string;
+  ano: number | null;
+  filename: string | null;
+  status: 'ok' | 'parcial' | 'erro';
+  metasTotal: number;
+  upserted: number;
+  ignored: number;
+  versionado: boolean;
+  errorMsg: string | null;
+  storagePath: string | null;
+}
+
+export function useMetasUploadLog() {
+  const { data, isLoading, error, refetch } = useQuery({
+    queryKey: ['metas-upload-log'],
+    queryFn: async (): Promise<MetaUploadLogRow[]> => {
+      const { data, error } = await supabase
+        .from('metas_upload_log')
+        .select('id,created_at,ano,filename,status,metas_total,upserted,ignored,versionado,error_msg,storage_path')
+        .order('created_at', { ascending: false })
+        .limit(30);
+      if (error) throw error;
+      return ((data ?? []) as Record<string, unknown>[]).map(r => ({
+        id: String(r.id),
+        createdAt: (r.created_at as string) ?? '',
+        ano: nullableNum(r.ano),
+        filename: (r.filename as string | null) ?? null,
+        status: ((r.status as string) ?? 'ok') as MetaUploadLogRow['status'],
+        metasTotal: num(r.metas_total),
+        upserted: num(r.upserted),
+        ignored: num(r.ignored),
+        versionado: Boolean(r.versionado),
+        errorMsg: (r.error_msg as string | null) ?? null,
+        storagePath: (r.storage_path as string | null) ?? null,
+      }));
+    },
+  });
+  const reload = useCallback(() => { void refetch(); }, [refetch]);
+  return { rows: data ?? [], loading: isLoading, error: errMsg(error), reload };
+}
+
 export interface ClientesPageRow {
   hotelId: number;
   hotelNome: string;
