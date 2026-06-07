@@ -106,6 +106,23 @@ button {
   }
 }
 
+/* ─── Modal (RateDayModal) ─── */
+@keyframes hgModalBackdrop { from { opacity: 0; } to { opacity: 1; } }
+@keyframes hgModalCard {
+  from { opacity: 0; transform: translateY(8px) scale(0.985); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes hgModalSheet {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+.hg-modal-backdrop { animation: hgModalBackdrop 140ms ease-out; }
+.hg-modal-card     { animation: hgModalCard 180ms cubic-bezier(0.16, 1, 0.3, 1); }
+.hg-modal-sheet    { animation: hgModalSheet 260ms cubic-bezier(0.16, 1, 0.3, 1); }
+@media (prefers-reduced-motion: reduce) {
+  .hg-modal-backdrop, .hg-modal-card, .hg-modal-sheet { animation: none; }
+}
+
 /* ─── Navbar responsivo (antes era <style> inline no Navbar) ─── */
 @media (max-width: 700px) {
   .navbar-shell { padding: 0 12px !important; }

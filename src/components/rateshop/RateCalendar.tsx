@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { AlertTriangle, ChevronLeft, ChevronRight, X, RefreshCw, CalendarDays, Table2, Download, Users, Loader2, Clock, CheckCircle2, HelpCircle } from 'lucide-react';
 import type { BookingRate, RateDaySummary } from '@/data/types';
 import { localDateKey } from '@/lib/utils';
@@ -422,18 +422,9 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange,
   const shopper = useShopperRun(hotelId);
   const [nowTick, setNowTick] = useState(() => Date.now());
 
-  const containerRef    = useRef<HTMLDivElement>(null);
-  const [modalAnchorTop, setModalAnchorTop] = useState(0);
-
-  // Capture document-absolute top (getBoundingClientRect + scrollY) BEFORE
-  // the modal renders so the layout hasn't shifted yet.
-  const openModal = useCallback((date: string) => {
-    if (containerRef.current) {
-      const rect = containerRef.current.getBoundingClientRect();
-      setModalAnchorTop(rect.top + window.scrollY);
-    }
-    setSelectedDate(date);
-  }, []);
+  // Abre o modal do dia. A posição/centralização é responsabilidade do próprio modal
+  // (fixed + centralizado), então não precisa mais capturar âncora do documento.
+  const openModal = useCallback((date: string) => setSelectedDate(date), []);
 
   const summaries    = useMemo(() => buildDaySummaries(visibleRates, selectedPersons), [visibleRates, selectedPersons]);
   const calendarDays = useMemo(() => buildCalendarDays(yearMonth, today), [yearMonth, today]);
@@ -591,7 +582,7 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange,
 
   return (
     <>
-      <div ref={containerRef} style={{
+      <div style={{
         background: 'var(--surface)', border: '1px solid var(--border)',
         borderRadius: 'var(--r)', padding: '20px 24px',
       }}>
@@ -895,7 +886,6 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange,
         <RateDayModal
           date={selectedDate}
           rates={selectedDayRates}
-          anchorTop={modalAnchorTop}
           onClose={() => setSelectedDate(null)}
         />
       )}
