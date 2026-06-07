@@ -22,7 +22,7 @@ export interface ShopperRunRow {
   note: string | null;
 }
 
-const COOLDOWN_MS = 3 * 60 * 60 * 1000; // 3h
+const COOLDOWN_MS = 0; // cooldown removido (2026-06-07): reprocessa sem espera (limite só 3/dia)
 const POLL_MS = 2500;
 
 export interface ShopperRunState {
