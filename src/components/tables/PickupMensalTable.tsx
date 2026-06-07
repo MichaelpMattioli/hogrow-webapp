@@ -181,7 +181,7 @@ interface MonthRow {
   mes: number;
   label: string;
   data: PickupMensalKpi | null;
-  alteracoesDiarias: number | null;
+  alteracoes: number | null;
 }
 
 interface Props {
@@ -198,7 +198,7 @@ export default function PickupMensalTable({ hotelId }: Props) {
     MES_PT.map((label, idx) => {
       const mes = idx + 1;
       const data = rowsByMes.get(mes) ?? null;
-      const alteracoesDiarias = data == null
+      const alteracoes = data == null
         ? null
         : data.alteracoesDiariasMes;
 
@@ -206,7 +206,7 @@ export default function PickupMensalTable({ hotelId }: Props) {
         mes,
         label,
         data,
-        alteracoesDiarias,
+        alteracoes,
       };
     })
   ), [rowsByMes]);
@@ -214,7 +214,7 @@ export default function PickupMensalTable({ hotelId }: Props) {
   const totals = useMemo(() => ({
     pickupReceita: rows.reduce((sum, row) => sum + row.pickupReceita, 0),
     pickupUhs: rows.reduce((sum, row) => sum + row.pickupUhs, 0),
-    alteracoes: monthRows.reduce((sum, row) => sum + (row.alteracoesDiarias ?? 0), 0),
+    alteracoes: monthRows.reduce((sum, row) => sum + (row.alteracoes ?? 0), 0),
     receitaReal: rows.reduce((sum, row) => sum + row.receitaReal, 0),
   }), [monthRows, rows]);
 
@@ -292,7 +292,7 @@ export default function PickupMensalTable({ hotelId }: Props) {
             icon={<BedDouble size={14} />}
           />
           <SummaryMetric
-            label="Alterações diárias"
+            label="Alterações"
             value={fmtNum(totals.alteracoes)}
             tone={totals.alteracoes > 0 ? 'change' : 'muted'}
             icon={<CalendarRange size={14} />}
@@ -323,9 +323,9 @@ export default function PickupMensalTable({ hotelId }: Props) {
                 <th
                   scope="col"
                   style={{ ...th, textAlign: 'center' }}
-                  title="Linhas do pick-up diário com alteração, considerando extração e referência dentro do mesmo mês."
+                  title="Quantidade de alterações de pick-up das diárias deste mês, considerando todas as extrações (inclui alterações feitas antes do mês começar)."
                 >
-                  Alt. diárias
+                  Alterações
                 </th>
               </tr>
             </thead>
@@ -359,18 +359,18 @@ export default function PickupMensalTable({ hotelId }: Props) {
                 <th
                   scope="col"
                   style={{ ...th, textAlign: 'center' }}
-                  title="Linhas do pick-up diário com alteração, considerando extração e referência dentro do mesmo mês."
+                  title="Quantidade de alterações de pick-up das diárias deste mês, considerando todas as extrações (inclui alterações feitas antes do mês começar)."
                 >
-                  Alt. diárias
+                  Alterações
                 </th>
               </tr>
             </thead>
             <tbody>
-              {monthRows.map(({ mes, label, data, alteracoesDiarias }) => {
+              {monthRows.map(({ mes, label, data, alteracoes }) => {
                 const hasData = data != null;
                 const metaTone: Tone = data?.receitaMeta == null ? 'muted' : 'neutral';
                 const realTone: Tone = !hasData ? 'muted' : data.receitaReal > 0 ? 'positive' : 'muted';
-                const changeTone: Tone = alteracoesDiarias != null && alteracoesDiarias > 0 ? 'change' : 'muted';
+                const changeTone: Tone = alteracoes != null && alteracoes > 0 ? 'change' : 'muted';
 
                 return (
                   <tr key={mes}>
@@ -415,7 +415,7 @@ export default function PickupMensalTable({ hotelId }: Props) {
                       {fmtPp(data?.pickupOccMediaPp ?? null)}
                     </td>
                     <td style={cellStyle(changeTone, 'center')}>
-                      {alteracoesDiarias != null ? alteracoesDiarias : '--'}
+                      {alteracoes != null ? alteracoes : '--'}
                     </td>
                   </tr>
                 );
