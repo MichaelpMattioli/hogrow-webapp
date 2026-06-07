@@ -734,6 +734,47 @@ export function useMetasPage(mesAno: string) {
   return { rows: data ?? [], loading: isLoading, error: errMsg(error), reload };
 }
 
+// ─── Metas (visão anual / só-leitura) ───────────────────────────────────
+export interface MetaAnualRow {
+  hotelId: number;
+  hotelNome: string;
+  cidade: string | null;
+  estado: string | null;
+  totalUhs: number;
+  mes: number;
+  mesAno: string;
+  receitaMeta: number | null;
+  occMeta: number | null;
+  dmMeta: number | null;
+  revparMeta: number | null;
+}
+
+export function useMetasAnual(ano: number) {
+  const { data, isLoading, error, refetch } = useQuery({
+    queryKey: ['metas-anual', ano],
+    enabled: !!ano,
+    queryFn: async (): Promise<MetaAnualRow[]> => {
+      const { data, error } = await supabase.rpc('rpc_metas_anual', { p_ano: ano });
+      if (error) throw error;
+      return ((data ?? []) as Record<string, unknown>[]).map(r => ({
+        hotelId: num(r.hotel_id),
+        hotelNome: (r.hotel_nome as string) ?? '',
+        cidade: (r.cidade as string | null) ?? null,
+        estado: (r.estado as string | null) ?? null,
+        totalUhs: num(r.total_uhs),
+        mes: num(r.mes),
+        mesAno: (r.mes_ano as string) ?? '',
+        receitaMeta: nullableNum(r.receita_meta),
+        occMeta: nullableNum(r.occ_meta),
+        dmMeta: nullableNum(r.dm_meta),
+        revparMeta: nullableNum(r.revpar_meta),
+      }));
+    },
+  });
+  const reload = useCallback(() => { void refetch(); }, [refetch]);
+  return { rows: data ?? [], loading: isLoading, error: errMsg(error), reload };
+}
+
 export interface ClientesPageRow {
   hotelId: number;
   hotelNome: string;
