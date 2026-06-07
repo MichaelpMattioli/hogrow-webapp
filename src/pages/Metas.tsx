@@ -53,12 +53,7 @@ function parseMeta(value: string) {
 
 // ─── Formatação da tabela anual ─────────────────────────────────────────
 // 0 é tratado como "sem meta" (meses inativos) — exibe "—" e fica fora da média do ano.
-function fmtReceitaCompact(v: number | null | undefined): string {
-  if (v == null || v === 0) return '—';
-  if (v >= 1_000_000) return `${(v / 1_000_000).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}M`;
-  if (v >= 1_000) return `${Math.round(v / 1_000).toLocaleString('pt-BR')}k`;
-  return Math.round(v).toLocaleString('pt-BR');
-}
+// Valores sempre INTEIROS, sem abreviação (k/M).
 function fmtInt(v: number | null | undefined): string {
   if (v == null || v === 0) return '—';
   return Math.round(v).toLocaleString('pt-BR');
@@ -77,7 +72,7 @@ interface CatConfig {
 }
 
 const CATS: CatConfig[] = [
-  { key: 'receitaMeta', label: 'Receita',      icon: BarChart3,  color: 'var(--accent)', bg: 'var(--accent-l)', prefix: 'R$', fmt: fmtReceitaCompact, agg: 'sum' },
+  { key: 'receitaMeta', label: 'Receita',      icon: BarChart3,  color: 'var(--accent)', bg: 'var(--accent-l)', prefix: 'R$', fmt: fmtInt,            agg: 'sum' },
   { key: 'occMeta',     label: 'Ocupação',     icon: Percent,    color: 'var(--green)',  bg: 'var(--green-l)',  suffix: '%',  fmt: fmtInt,            agg: 'avg' },
   { key: 'dmMeta',      label: 'Diária Média', icon: DollarSign, color: 'var(--gold)',   bg: 'var(--gold-l)',   prefix: 'R$', fmt: fmtInt,            agg: 'avg' },
 ];
