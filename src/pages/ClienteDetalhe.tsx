@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useRef, useEffect, type CSSProperties } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { BedDouble, DollarSign, TrendingUp, BarChart3, ArrowLeft, MoreVertical, Pencil, Percent, Users } from 'lucide-react';
+import { BedDouble, DollarSign, TrendingUp, BarChart3, ArrowLeft, MoreVertical, Pencil, Percent, Users, CalendarRange } from 'lucide-react';
 import {
   updateHotel,
   useClienteDetalheCards,
@@ -18,7 +18,7 @@ import type { PerfData, MetaData } from '@/components/cards/PerformanceCard';
 import PickupSection from '@/components/tables/PickupSection';
 import HotelEditForm from '@/components/forms/HotelEditForm';
 import RateCalendar from '@/components/rateshop/RateCalendar';
-import HeaderMonthReference from '@/components/ui/HeaderMonthReference';
+import HeaderMonthReference, { type DayRange } from '@/components/ui/HeaderMonthReference';
 import { Skeleton, SkeletonText } from '@/components/ui/Skeleton';
 
 type Tab = 'dashboard' | 'editar';
@@ -161,6 +161,7 @@ export default function ClienteDetalhe() {
   const mesAtual = localMonthKey();
   const [selectedMeses, setSelectedMeses] = useState<string[]>([mesAtual]);
   const [selectedPosition, setSelectedPosition] = useState('');
+  const [dayRange, setDayRange] = useState<DayRange | null>(null);
   const [rateMonth, setRateMonth] = useState(mesAtual);
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -194,7 +195,7 @@ export default function ClienteDetalhe() {
   const availablePositionDates = useMemo(() => [...(calendar?.availableExtractionDates ?? [])].sort(), [calendar]);
   const calendarMonth = selectedMes || resolvedMes || availableMonths[availableMonths.length - 1] || '';
   const calendarPosition = selectedPosition || resolvedPosition || '';
-  const { cards, loading: cardsLoading, error: cardsError } = useClienteDetalheCards(hotelId, dataMes, dataPosition);
+  const { cards, loading: cardsLoading, error: cardsError } = useClienteDetalheCards(hotelId, dataMes, dataPosition, dayRange?.ini ?? null, dayRange?.fim ?? null);
   const { rows: pickupRows, loading: pickupLoading, error: pickupError } = useClientePickupDiario(hotelId, dataMes, dataPosition);
 
   const rateFrom = useMemo(() => {
@@ -228,6 +229,7 @@ export default function ClienteDetalhe() {
     const month = months[months.length - 1] ?? mesAtual;
     setSelectedMeses([month]);
     setRateMonth(month);
+    setDayRange(null);
   }, [mesAtual]);
 
   useEffect(() => {
@@ -316,6 +318,8 @@ export default function ClienteDetalhe() {
               availablePositionDates={availablePositionDates}
               onPositionSelect={handlePositionSelect}
               onCurrentMonthSelect={handleCurrentMonthSelect}
+              dayRange={dayRange}
+              onDayRangeChange={setDayRange}
             />
           )}
 
@@ -374,9 +378,29 @@ export default function ClienteDetalhe() {
             </div>
           ) : (
             <>
+              {dayRange && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+                  marginBottom: 14, padding: '9px 14px', borderRadius: 'var(--rx)',
+                  background: 'var(--accent-l)', border: '1px solid color-mix(in srgb, var(--accent) 22%, transparent)',
+                  fontSize: 12, fontWeight: 600, color: 'var(--accent-d)',
+                }}>
+                  <CalendarRange size={14} style={{ flexShrink: 0 }} />
+                  <span>
+                    Faixa de dias <strong>{dayRange.ini}{dayRange.ini !== dayRange.fim ? `–${dayRange.fim}` : ''}</strong> — os cards refletem a faixa; <strong>vs ano ant.</strong> e <strong>acum. ano</strong> são do mês/ano completo.
+                  </span>
+                  <button onClick={() => setDayRange(null)} style={{
+                    marginLeft: 'auto', fontSize: 11, fontWeight: 700, color: 'var(--accent)',
+                    background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--rx)',
+                    padding: '3px 9px', cursor: 'pointer',
+                  }}>
+                    Limpar faixa
+                  </button>
+                </div>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-5" style={{ marginBottom: 12 }}>
                 <PerformanceCard
-                  title="Receita" icon={BarChart3} highlight delay={0}
+                  title="Receita" icon={BarChart3} highlight delay={0} partialRange={Boolean(dayRange)}
                   currentValue={cards?.receitaAtual ?? 0} currentFormatted={cards ? fmtRec(cards.receitaAtual) : ''}
                   prevYear={cards ? pd(cards.receitaPrevYear, fmtRec) : null}
                   ytd={cards ? pd(cards.receitaYtd, fmtRec) : null}
@@ -386,7 +410,7 @@ export default function ClienteDetalhe() {
                   loading={cardsValueLoading}
                 />
                 <PerformanceCard
-                  title="Ocupacao" icon={Percent} highlight delay={60}
+                  title="Ocupacao" icon={Percent} highlight delay={60} partialRange={Boolean(dayRange)}
                   currentValue={cards?.occAtual ?? 0} currentFormatted={cards ? fmtOcc(cards.occAtual) : ''}
                   prevYear={cards ? pd(cards.occPrevYear, fmtOcc) : null}
                   ytd={cards ? pd(cards.occYtd, fmtOcc) : null}
@@ -395,7 +419,7 @@ export default function ClienteDetalhe() {
                   loading={cardsValueLoading}
                 />
                 <PerformanceCard
-                  title="Diaria Media" icon={DollarSign} highlight delay={120}
+                  title="Diaria Media" icon={DollarSign} highlight delay={120} partialRange={Boolean(dayRange)}
                   currentValue={cards?.dmAtual ?? 0} currentFormatted={cards ? fmtR(cards.dmAtual) : ''}
                   prevYear={cards ? pd(cards.dmPrevYear, fmtR) : null}
                   ytd={cards ? pd(cards.dmYtd, fmtR) : null}

@@ -26,6 +26,7 @@ interface PerformanceCardProps {
   highlight?: boolean;
   delay?: number;
   loading?: boolean;
+  partialRange?: boolean;   // faixa de dias parcial ativa -> meta (mensal) nao se aplica
 }
 
 function monthElapsedRatio(referenceMonth?: string): number {
@@ -272,7 +273,7 @@ function CardValueSkeleton({ meta }: { meta: boolean }) {
 
 export default function PerformanceCard({
   title, icon: Icon, currentValue, currentFormatted,
-  prevYear, ytd, meta, metaCumulative = false, referenceMonth, highlight = false, delay = 0, loading = false,
+  prevYear, ytd, meta, metaCumulative = false, referenceMonth, highlight = false, delay = 0, loading = false, partialRange = false,
 }: PerformanceCardProps) {
   return (
     <div
@@ -306,8 +307,8 @@ export default function PerformanceCard({
             {currentFormatted}
           </div>
 
-          {/* Meta strip */}
-          {meta && meta.value > 0 && (
+          {/* Meta strip — oculto sob faixa parcial (meta é mensal, não compara com faixa) */}
+          {!partialRange && meta && meta.value > 0 && (
             <MetaStrip
               meta={meta}
               currentValue={currentValue}

@@ -1,11 +1,11 @@
 import { useEffect, useState, useMemo, useCallback, memo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useClientesCalendar, useClientesTable, type ClientesPageRow, type MonthlyKpi } from '@/hooks/useSupabase';
-import { ChevronUp, ChevronDown, TrendingUp, TrendingDown, Minus, ChevronsUpDown, Hash } from 'lucide-react';
+import { ChevronUp, ChevronDown, TrendingUp, TrendingDown, Minus, ChevronsUpDown, Hash, CalendarRange } from 'lucide-react';
 import type { HotelSummary, HotelMeta } from '@/data/types';
 import { STATUS_CONFIG } from '@/lib/utils';
 import { deriveStatus } from '@/data/transforms';
-import HeaderMonthReference from '@/components/ui/HeaderMonthReference';
+import HeaderMonthReference, { type DayRange } from '@/components/ui/HeaderMonthReference';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -562,6 +562,15 @@ const HotelRow = memo(function HotelRow({
               {annualPct.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
             </span>
           )}
+          {ok(annualMeta) && annualMeta > 0 && ok(annualPct) && (
+            <div style={{ width: 80, height: 4, background: 'var(--border-l)', borderRadius: 99, overflow: 'hidden' }}>
+              <div style={{
+                height: '100%', borderRadius: 99,
+                width: `${Math.min(annualPct, 100)}%`,
+                background: annualMetaColor, transition: 'width .4s ease',
+              }} />
+            </div>
+          )}
         </div>
       </td>
 
@@ -655,6 +664,7 @@ export default function Clientes() {
   const [fullNumbers, setFull]    = useState(true);
   const [selectedMonth, setSelectedMonth] = useState(() => currentMesAno());
   const [selectedPosition, setSelectedPosition] = useState('');
+  const [dayRange, setDayRange] = useState<DayRange | null>(null);
   const navigate      = useNavigate();
   const [searchParams] = useSearchParams();
   const q = (searchParams.get('q') ?? '').toLowerCase().trim();
@@ -686,7 +696,7 @@ export default function Clientes() {
     rows,
     loading: tableLoading,
     error: tableError,
-  } = useClientesTable(tableMonth || null, tablePosition || null);
+  } = useClientesTable(tableMonth || null, tablePosition || null, dayRange?.ini ?? null, dayRange?.fim ?? null);
   const error = calendarError || tableError;
 
   const availableMonths = useMemo(() => {
@@ -702,6 +712,7 @@ export default function Clientes() {
 
   const handleReferenceMonthSelect = (month: string) => {
     setSelectedMonth(month);
+    setDayRange(null);
   };
 
   const handlePositionSelect = (date: string) => {
@@ -712,6 +723,7 @@ export default function Clientes() {
   const handleCurrentMonthSelect = () => {
     setSelectedMonth(currentMesAno());
     setSelectedPosition('');
+    setDayRange(null);
   };
 
   useEffect(() => {
@@ -810,6 +822,8 @@ export default function Clientes() {
               availablePositionDates={availablePositionDates}
               onPositionSelect={handlePositionSelect}
               onCurrentMonthSelect={handleCurrentMonthSelect}
+              dayRange={dayRange}
+              onDayRangeChange={setDayRange}
             />
           )}
 
@@ -836,6 +850,30 @@ export default function Clientes() {
 
         </div>
       </div>
+
+      {dayRange && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+          marginBottom: 14, padding: '9px 14px', borderRadius: 'var(--rx)',
+          background: 'var(--accent-l)', border: '1px solid color-mix(in srgb, var(--accent) 22%, transparent)',
+          fontSize: 12, fontWeight: 600, color: 'var(--accent-d)',
+        }}>
+          <CalendarRange size={14} style={{ flexShrink: 0 }} />
+          <span>
+            Faixa de dias <strong>{dayRange.ini}{dayRange.ini !== dayRange.fim ? `–${dayRange.fim}` : ''}</strong> ativa — só a coluna <strong>Real</strong> reflete a faixa; Meta, MoM, YoY e Acumulado são do <strong>mês completo</strong>.
+          </span>
+          <button
+            onClick={() => setDayRange(null)}
+            style={{
+              marginLeft: 'auto', fontSize: 11, fontWeight: 700, color: 'var(--accent)',
+              background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--rx)',
+              padding: '3px 9px', cursor: 'pointer',
+            }}
+          >
+            Limpar faixa
+          </button>
+        </div>
+      )}
 
       {!isTableLoading && !error && sorted.length === 0 ? (
         <div style={{
