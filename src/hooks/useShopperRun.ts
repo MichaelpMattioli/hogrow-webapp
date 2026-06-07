@@ -75,6 +75,10 @@ export function useShopperRun(hotelId: number): ShopperRunState {
       if (data.status === 'done' || data.status === 'error') {
         setActiveRunId(null);
         if (data.status === 'done') {
+          // os hooks reais do shopper no ClienteDetalhe usam estas chaves:
+          qc.invalidateQueries({ queryKey: ['cliente-rate-shopper', hotelId] });
+          qc.invalidateQueries({ queryKey: ['cliente-rate-shopper-months', hotelId] });
+          // (mantém os antigos por segurança, caso algo ainda use)
           qc.invalidateQueries({ queryKey: ['booking-rates', hotelId] });
           qc.invalidateQueries({ queryKey: ['booking-rates-months', hotelId] });
         }

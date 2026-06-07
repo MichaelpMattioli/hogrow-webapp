@@ -16,9 +16,12 @@ createRoot(document.getElementById('root')!).render(
         buster: cacheBuster,
         // Não persiste o rate-shopper (cache removido): cada visita busca o estado atual.
         dehydrateOptions: {
-          shouldDehydrateQuery: (q) =>
-            q.state.status === 'success' &&
-            !String(q.queryKey?.[0] ?? '').startsWith('booking-rates'),
+          shouldDehydrateQuery: (q) => {
+            const k = String(q.queryKey?.[0] ?? '');
+            return q.state.status === 'success' &&
+              !k.startsWith('cliente-rate-shopper') &&
+              !k.startsWith('booking-rates');
+          },
         },
       }}
     >

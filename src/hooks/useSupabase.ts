@@ -743,6 +743,9 @@ export interface ClientesPageRow {
   status: HotelSummary['status'];
   selectedMesAno: string;
   selectedDataExtracao: string;
+  selectedDiaIni: number;
+  selectedDiaFim: number;
+  isFaixaParcial: boolean;
   receitaMeta: number | null;
   receitaReal: number;
   receitaMetaPct: number | null;
@@ -794,6 +797,9 @@ function mapClientesPageRow(row: Record<string, unknown>): ClientesPageRow {
     status: (row.status as HotelSummary['status']) ?? 'critical',
     selectedMesAno: (row.selected_mes_ano as string) ?? '',
     selectedDataExtracao: (row.selected_data_extracao as string) ?? '',
+    selectedDiaIni: num(row.selected_dia_ini),
+    selectedDiaFim: num(row.selected_dia_fim),
+    isFaixaParcial: Boolean(row.is_faixa_parcial),
     receitaMeta: nullableNum(row.receita_meta),
     receitaReal: num(row.receita_real),
     receitaMetaPct: nullableNum(row.receita_meta_pct),
@@ -831,10 +837,10 @@ export function useClientesCalendar(mesAno?: string | null, dataExtracao?: strin
   return { calendar: data ?? null, loading: isLoading, error: errMsg(error) };
 }
 
-export function useClientesTable(mesAno?: string | null, dataExtracao?: string | null) {
+export function useClientesTable(mesAno?: string | null, dataExtracao?: string | null, diaIni?: number | null, diaFim?: number | null) {
   const enabled = !!mesAno && !!dataExtracao;
   const { data, isLoading, error } = useQuery({
-    queryKey: ['clientes-table', mesAno ?? '', dataExtracao ?? ''],
+    queryKey: ['clientes-table', mesAno ?? '', dataExtracao ?? '', diaIni ?? 0, diaFim ?? 0],
     enabled,
     queryFn: async (): Promise<ClientesPageRow[]> => {
       // Minimum loading window avoids a skeleton flash on fast fetches; only
@@ -843,6 +849,8 @@ export function useClientesTable(mesAno?: string | null, dataExtracao?: string |
       const { data, error } = await supabase.rpc('rpc_clientes_table', {
         p_mes_ano: mesAno,
         p_data_extracao: dataExtracao,
+        p_dia_ini: diaIni ?? null,
+        p_dia_fim: diaFim ?? null,
       });
       if (error) throw error;
       const rows = ((data ?? []) as Record<string, unknown>[]).map(mapClientesPageRow);
@@ -1009,6 +1017,9 @@ export interface ClienteDetalheCards {
   hotelId: number;
   selectedMesAno: string;
   selectedDataExtracao: string;
+  selectedDiaIni: number;
+  selectedDiaFim: number;
+  isFaixaParcial: boolean;
   receitaAtual: number;
   occAtual: number;
   dmAtual: number;
@@ -1038,6 +1049,9 @@ function mapClienteDetalheCards(row: Record<string, unknown>): ClienteDetalheCar
     hotelId: num(row.hotel_id),
     selectedMesAno: String(row.selected_mes_ano ?? ''),
     selectedDataExtracao: String(row.selected_data_extracao ?? ''),
+    selectedDiaIni: num(row.selected_dia_ini),
+    selectedDiaFim: num(row.selected_dia_fim),
+    isFaixaParcial: Boolean(row.is_faixa_parcial),
     receitaAtual: num(row.receita_atual),
     occAtual: num(row.occ_atual),
     dmAtual: num(row.dm_atual),
@@ -1063,15 +1077,17 @@ function mapClienteDetalheCards(row: Record<string, unknown>): ClienteDetalheCar
   };
 }
 
-export function useClienteDetalheCards(hotelId: number, mesAno: string, dataExtracao?: string | null) {
+export function useClienteDetalheCards(hotelId: number, mesAno: string, dataExtracao?: string | null, diaIni?: number | null, diaFim?: number | null) {
   const { data, isLoading, error } = useQuery({
-    queryKey: ['cliente-detalhe-cards', hotelId, mesAno, dataExtracao ?? ''],
+    queryKey: ['cliente-detalhe-cards', hotelId, mesAno, dataExtracao ?? '', diaIni ?? 0, diaFim ?? 0],
     enabled: !!hotelId && !!mesAno && !!dataExtracao,
     queryFn: async (): Promise<ClienteDetalheCards | null> => {
       const { data, error } = await supabase.rpc('rpc_cliente_detalhe_cards', {
         p_hotel_id: hotelId,
         p_mes_ano: mesAno,
         p_data_extracao: dataExtracao,
+        p_dia_ini: diaIni ?? null,
+        p_dia_fim: diaFim ?? null,
       });
       if (error) throw error;
       const row = Array.isArray(data) ? data[0] : data;
@@ -1164,6 +1180,11 @@ export function useClienteRateShopper(
     queryKey: ['cliente-rate-shopper', hotelId, yearMonth, from, keepLatest],
     enabled: !!hotelId && !!yearMonth,
     queryFn: () => fetchClienteRateShopperMonth(hotelId, yearMonth, from, keepLatest),
+    // Sem cache no shopper: sempre busca o estado atual (o on-demand muda os preços fora
+    // do ciclo das 09:30; servir cache "fresh" mostraria dado velho até fechar a aba).
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnMount: 'always',
   });
 
   return { rates: data ?? [], loading: isLoading, error: errMsg(error) };
@@ -1181,6 +1202,9 @@ export function useClienteRateShopperForMonths(hotelId: number, yearMonths: stri
       );
       return loaded.flat();
     },
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnMount: 'always',
   });
 
   return { rates: data ?? [], loading: isLoading, error: errMsg(error) };
