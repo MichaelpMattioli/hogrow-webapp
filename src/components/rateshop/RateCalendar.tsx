@@ -29,14 +29,6 @@ function fmtDateOnly(value: string) {
   return `${day}/${month}`;
 }
 
-function fmtCountdown(ms: number) {
-  const s = Math.ceil(ms / 1000);
-  const h = Math.floor(s / 3600);
-  const mm = Math.floor((s % 3600) / 60);
-  const ss = s % 60;
-  return h > 0 ? `${h}h${String(mm).padStart(2, '0')}` : `${mm}:${String(ss).padStart(2, '0')}`;
-}
-
 function pctBgBorder(pct: number | null) {
   if (pct === null) return { cellBg: 'var(--surface-h)', borderColor: 'var(--border-l)', pctColor: 'var(--text-m)' };
   if (pct < 0)   return { cellBg: 'var(--green-l)', borderColor: '#A7F3D0', pctColor: 'var(--green)' };
@@ -507,6 +499,38 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange,
     background: active ? 'rgba(var(--accent-rgb),0.08)' : 'transparent',
   });
 
+  // Botão "Atualizar agora" (on-demand). big = versão proeminente (header/estado vazio);
+  // compacto = dentro do alerta de desatualizado. Faz o mesmo: dispara o run do hotel.
+  const updateButton = (big: boolean) => (
+    <button
+      type="button"
+      onClick={() => { if (!updateDisabled) void shopper.trigger(); }}
+      disabled={updateDisabled}
+      aria-label="Atualizar preços do rate shopper agora"
+      title={shopper.dailyLimited ? 'Limite de atualizações por dia atingido' : 'Buscar preços atualizados do Booking agora'}
+      style={{
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+        padding: big ? '9px 16px' : '6px 12px',
+        borderRadius: 'var(--rx)',
+        border: `1px solid ${updateDisabled && !shopper.isActive ? 'var(--border)' : 'var(--accent)'}`,
+        background: updateDisabled ? (shopper.isActive ? 'rgba(var(--accent-rgb),0.10)' : 'var(--surface)') : 'var(--accent)',
+        color: updateDisabled ? 'var(--text-m)' : '#fff',
+        fontSize: big ? 12.5 : 11, fontWeight: 750, whiteSpace: 'nowrap',
+        cursor: updateDisabled ? 'not-allowed' : 'pointer',
+        opacity: (updateDisabled && !shopper.isActive) ? 0.7 : 1,
+        transition: 'all 0.15s',
+      }}
+    >
+      {shopper.isActive ? (
+        <><Loader2 size={big ? 14 : 11} className="animate-spin" /> Atualizando{shopperPct != null ? ` ${shopperPct}%` : '…'}</>
+      ) : shopper.dailyLimited ? (
+        <><AlertTriangle size={big ? 13 : 10} /> Limite diário</>
+      ) : (
+        <><RefreshCw size={big ? 14 : 11} /> Atualizar agora</>
+      )}
+    </button>
+  );
+
   return (
     <>
       <div ref={containerRef} style={{
@@ -528,57 +552,26 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange,
             {lastScrapedAt && (
               <div style={{ display:'flex', alignItems:'center', gap:6, flexWrap:'wrap', justifyContent:'flex-end' }}>
                 <div className="flex items-center gap-1.5" style={{
-                  padding: '5px 9px', borderRadius: 'var(--rx)',
-                  background: shopperNeedsUpdate ? 'var(--amber-l)' : 'var(--bg)',
-                  border: `1px solid ${shopperNeedsUpdate ? '#FDE68A' : 'var(--border-l)'}`,
+                  padding: '6px 11px', borderRadius: 'var(--rx)',
+                  background: shopperNeedsUpdate ? 'var(--amber-l)' : 'var(--green-l)',
+                  border: `1px solid ${shopperNeedsUpdate ? '#FDE68A' : '#A7F3D0'}`,
                 }}>
                   {shopperNeedsUpdate ? (
-                    <AlertTriangle size={10} style={{ color: 'var(--amber)', flexShrink: 0 }} />
+                    <AlertTriangle size={12} style={{ color: 'var(--amber)', flexShrink: 0 }} />
                   ) : (
-                    <RefreshCw size={10} style={{ color: 'var(--green)', flexShrink: 0 }} />
+                    <RefreshCw size={12} style={{ color: 'var(--green)', flexShrink: 0 }} />
                   )}
-                  <span style={{ fontSize: 10.5, color: 'var(--text-m)', fontWeight: 500 }}>
-                    {shopperNeedsUpdate ? 'Desatualizado' : 'Atualizado'}{' '}
-                    <strong style={{ color: 'var(--text)', fontWeight: 700 }}>{fmtScraped(lastScrapedAt)}</strong>
+                  <span style={{ fontSize: 11.5, color: 'var(--text-m)', fontWeight: 600 }}>
+                    Última coleta: <strong style={{ color: 'var(--text)', fontWeight: 750 }}>{fmtScraped(lastScrapedAt)}</strong>
+                    {shopperNeedsUpdate ? <span style={{ color: 'var(--amber)', fontWeight: 700 }}> · desatualizado</span> : null}
                   </span>
                 </div>
 
               </div>
             )}
 
-            {/* Atualizar agora (on-demand): dispara o rate-shopper deste hotel */}
-            <button
-              type="button"
-              onClick={() => { if (!updateDisabled) void shopper.trigger(); }}
-              disabled={updateDisabled}
-              aria-label="Atualizar preços do rate shopper agora"
-              title={
-                shopper.isActive ? 'Buscando preços atualizados…'
-                : cooldownLeftMs > 0 ? `Disponível em ${fmtCountdown(cooldownLeftMs)}`
-                : shopper.dailyLimited ? 'Limite de 3 atualizações por dia atingido'
-                : 'Buscar preços atualizados do Booking agora'
-              }
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                padding: '5px 10px', borderRadius: 'var(--rx)',
-                border: '1px solid var(--border)',
-                background: shopper.isActive ? 'rgba(var(--accent-rgb),0.08)' : 'var(--surface)',
-                color: updateDisabled ? 'var(--text-m)' : 'var(--accent)',
-                fontSize: 10.5, fontWeight: 750, whiteSpace: 'nowrap',
-                cursor: updateDisabled ? 'not-allowed' : 'pointer',
-                opacity: (updateDisabled && !shopper.isActive) ? 0.75 : 1,
-              }}
-            >
-              {shopper.isActive ? (
-                <><Loader2 size={11} className="animate-spin" /> Atualizando{shopperPct != null ? ` ${shopperPct}%` : '…'}</>
-              ) : cooldownLeftMs > 0 ? (
-                <><RefreshCw size={10} /> Em {fmtCountdown(cooldownLeftMs)}</>
-              ) : shopper.dailyLimited ? (
-                <><AlertTriangle size={10} /> Limite diário</>
-              ) : (
-                <><RefreshCw size={10} /> Atualizar agora</>
-              )}
-            </button>
+            {/* Atualizar agora (on-demand): CTA primário, faz o mesmo do alerta/estado vazio */}
+            {updateButton(true)}
             {shopper.busy ? (
               <span style={{ fontSize: 10, color: 'var(--amber)', fontWeight: 600 }}>
                 ocupado — tente em instantes
@@ -637,20 +630,20 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange,
         {/* ── Header row 2: Pax filter ── */}
         {shopperNeedsUpdate && lastScrapedDate && (
           <div style={{
-            display:'flex', alignItems:'center', gap:8,
-            marginBottom:14,
-            padding:'8px 10px',
-            borderRadius:'var(--rx)',
-            background:'var(--amber-l)',
-            border:'1px solid #FDE68A',
-            color:'var(--text)',
-            fontSize:11.5,
-            fontWeight:600,
+            display:'flex', alignItems:'center', gap:12, flexWrap:'wrap',
+            marginBottom:14, padding:'12px 14px', borderRadius:'var(--rx)',
+            background:'var(--amber-l)', border:'1px solid #FDE68A',
           }}>
-            <AlertTriangle size={14} style={{ color:'var(--amber)', flexShrink:0 }} />
-            <span>
-              Shopper desatualizado: última coleta em {fmtDateOnly(lastScrapedDate)}. Atualize para refletir a data de hoje ({fmtDateOnly(today)}).
-            </span>
+            <AlertTriangle size={18} style={{ color:'var(--amber)', flexShrink:0 }} />
+            <div style={{ flex:1, minWidth:200 }}>
+              <div style={{ fontSize:12.5, fontWeight:750, color:'var(--text)' }}>
+                Preços de {fmtDateOnly(lastScrapedDate)} — desatualizados
+              </div>
+              <div style={{ fontSize:11, color:'var(--text-m)', marginTop:2 }}>
+                Os preços do Booking mudam a qualquer hora. Atualize para os de hoje ({fmtDateOnly(today)}).
+              </div>
+            </div>
+            {updateButton(false)}
           </div>
         )}
 
@@ -686,13 +679,14 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange,
             <span style={{ fontSize: 12, color: 'var(--text-m)' }}>Carregando tarifas...</span>
           </div>
         ) : !hasAnyData ? (
-          <div className="flex flex-col items-center justify-center" style={{ padding: '48px 0' }}>
-            <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-m)' }}>
-              Sem dados de tarifas para este mês
+          <div className="flex flex-col items-center justify-center" style={{ padding: '48px 0', gap: 12 }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-m)' }}>
+              Sem coleta de preços para este mês
             </span>
-            <span style={{ fontSize: 11, color: 'var(--text-m)', marginTop: 4 }}>
-              Execute o scraper para popular os dados
+            <span style={{ fontSize: 11, color: 'var(--text-m)', textAlign: 'center', maxWidth: 300 }}>
+              O rate shopper é sob demanda — clique para buscar os preços do Booking agora.
             </span>
+            {updateButton(true)}
           </div>
         ) : view === 'table' ? (
           <TableView
