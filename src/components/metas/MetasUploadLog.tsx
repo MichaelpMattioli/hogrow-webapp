@@ -1,5 +1,7 @@
-import { AlertCircle, AlertTriangle, Check, History, Loader2, Minus } from 'lucide-react';
+import { useState } from 'react';
+import { AlertCircle, AlertTriangle, Check, ChevronRight, History, Loader2, Minus } from 'lucide-react';
 import type { MetaUploadLogRow } from '@/hooks/useSupabase';
+import MetasModal, { IssueList } from './MetasModal';
 
 const STATUS: Record<MetaUploadLogRow['status'], { label: string; color: string; bg: string; Icon: typeof Check }> = {
   ok:      { label: 'OK',      color: 'var(--green)', bg: 'var(--green-l)', Icon: Check },
@@ -34,6 +36,7 @@ function observacao(r: MetaUploadLogRow): string {
 export default function MetasUploadLog({
   rows, loading, error,
 }: { rows: MetaUploadLogRow[]; loading: boolean; error: string | null }) {
+  const [detail, setDetail] = useState<MetaUploadLogRow | null>(null);
   const th: React.CSSProperties = {
     position: 'sticky', top: 0, zIndex: 1, background: 'var(--surface-h)', color: 'var(--text-m)',
     fontSize: 10, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase',
@@ -87,6 +90,7 @@ export default function MetasUploadLog({
                 <th style={{ ...th, textAlign: 'right' }}>Aplicadas</th>
                 <th style={{ ...th, textAlign: 'center' }}>Versionado</th>
                 <th style={th}>Observação</th>
+                <th style={{ ...th, width: 30 }} aria-label="Detalhe" />
               </tr>
             </thead>
             <tbody>
@@ -94,7 +98,7 @@ export default function MetasUploadLog({
                 const s = STATUS[r.status] ?? STATUS.ok;
                 const obs = observacao(r);
                 return (
-                  <tr key={r.id} className="metas-row">
+                  <tr key={r.id} className="metas-row" style={{ cursor: 'pointer' }} onClick={() => setDetail(r)} title="Ver detalhes do envio">
                     <td style={{ ...td, color: 'var(--text-m)', fontFamily: 'var(--mono)', fontSize: 11.5 }}>{fmtDateTime(r.createdAt)}</td>
                     <td style={{ ...td, maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 650 }} title={r.filename ?? undefined}>
                       {r.filename ?? '—'}
@@ -117,12 +121,28 @@ export default function MetasUploadLog({
                     <td style={{ ...td, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', color: obs === '—' ? 'var(--border)' : 'var(--text-m)', fontWeight: 600 }} title={obs !== '—' ? obs : undefined}>
                       {obs}
                     </td>
+                    <td style={{ ...td, textAlign: 'center', color: 'var(--text-m)' }}><ChevronRight size={14} /></td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
         </div>
+      )}
+
+      {detail && (
+        <MetasModal
+          title={<span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            Detalhes do envio
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 9px', borderRadius: 999, background: STATUS[detail.status].bg, color: STATUS[detail.status].color, fontSize: 11, fontWeight: 800 }}>
+              {STATUS[detail.status].label}
+            </span>
+          </span>}
+          subtitle={`${detail.filename ?? '—'} · ${fmtDateTime(detail.createdAt)} · ${detail.upserted}/${detail.metasTotal} aplicadas${detail.ignored ? ` · ${detail.ignored} ignoradas` : ''}`}
+          onClose={() => setDetail(null)}
+        >
+          <IssueList issues={detail.issues ?? []} />
+        </MetasModal>
       )}
     </div>
   );

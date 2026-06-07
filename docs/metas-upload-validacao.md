@@ -231,21 +231,27 @@ com a lista). Hoje ela mostra texto genérico; com isso vira detalhada.
   — **7/7**: T-OK-01, T-FMT-01(→E-FMT-02), T-FMT-03, T-FMT-04, T-HDR-02, T-HDR-03, T-HDR-04.
   E2E Playwright do apply: upload OK (verde, 12/12) e cabeçalho sem Categoria (vermelho, log `erro`).
 
-### Fase 2 — Validação de linha/célula (`parcial` detalhado)
-- **Função:** `E-ROW-*`, `E-VAL-*` por item; aplica o que é válido, registra rejeições.
-- **Cobre:** T-ROW-*, T-VAL-*.
+### Fase 2 — Validação de linha/célula (`parcial` detalhado) ✅ FEITA (2026-06-07)
+- **Função:** `E-ROW-01/02/03/04` (ID inválido / inexistente / não-cliente / categoria desconhecida —
+  usa `hotel(id, nome_fantasia, tipo)` para separar E-ROW-02 de E-ROW-03) e `E-VAL-01/02/03`
+  (não-numérico / negativo / ocupação fora de 0–100) por célula. Aplica o que é válido, rejeita o resto.
+- **Cobre:** T-ROW-01/02/03/04, T-VAL-01/02/03.
 
-### Fase 3 — Alertas de negócio
-- **Função:** `A-BIZ-01` (meses vazios), `A-BIZ-03` (ausentes), `A-BIZ-04` (zeragem, conforme P-1),
-  `A-BIZ-05/06/07`, `A-BIZ-08`. Conta `alertas`; aplica regra de `parcial` para destrutivo.
-- **Cobre:** T-BIZ-*.
+### Fase 3 — Merge P-1 + alertas de negócio ✅ FEITA (2026-06-07)
+- **Função:** lê as metas atuais (`hotel_metas` do ano) e faz **merge campo-a-campo** — célula vazia
+  MANTÉM o valor atual (P-1), só faz `upsert` das linhas que de fato mudam. Alertas `A-BIZ-01`
+  (meses vazios mantidos), `A-BIZ-06` (categoria incompleta), `A-BIZ-07` (duplicada), `A-BIZ-08`
+  (ano divergente); infos `A-BIZ-03` (hotéis ausentes), `A-BIZ-05` (substituições). `A-BIZ-04`
+  (zeragem) só via preview confirmado — fora do apply normal.
+- **Cobre:** T-BIZ-01/06/07/08.
 
-### Fase 4 — Preview / dry-run + UI de detalhe
-- **Função:** aceita `modo='preview'` → valida + calcula *diff* (criações/sobrescritas/zeragens) **sem
-  aplicar**; retorna status projetado + issues + resumo do diff.
-- **Front:** após escolher o arquivo, chama preview → **modal**: “Vai aplicar X · substituir Y · zerar Z ·
-  N hotéis ausentes · K alertas” → botão **Confirmar e aplicar**. Coluna Observação clicável → modal de issues.
-- **Cobre:** T-PRV-*.
+### Fase 4 — Preview / dry-run + UI de detalhe ✅ FEITA (2026-06-07)
+- **Função:** `modo='preview'` valida + calcula o **diff** (`criadas/substituidas/mantidas/inalteradas/
+  aplicar/ignored/hoteisAusentes`) **sem gravar** (nem upsert, nem storage, nem log).
+- **Front:** escolher o arquivo chama o preview → **modal** (`MetasModal`) com os números do diff +
+  lista de issues categorizada (erro/alerta/info) → **Confirmar · aplicar N**. No histórico, cada linha
+  é **clicável** → modal com todas as issues daquele envio. Componente reusável `IssueList`.
+- **Cobre:** T-PRV-01 (diff). E2E Playwright: preview (parcial, 8 a aplicar) + detalhe.
 
 ### Fase 5 — Sanidade avançada (opcional)
 - **Função:** `A-VAL-01/02/03/05` (fração, incoerência, outlier vs `hotel_receita_diaria`).
@@ -293,17 +299,19 @@ Cada caso = 1 fixture `.xlsx` + status/issues esperados. `[base]` = 1 hotel-clie
 
 ---
 
-## 11. Harness de teste proposto
+## 11. Harness de teste ✅ implementado
 
-- **Geração de fixtures:** script Python (`openpyxl`) que monta 1 `.xlsx` por caso a partir de um base
-  parametrizável (ex.: `tests/metas_upload/gen_fixtures.py`).
-- **Runner backend:** invoca a Edge Function (anon Bearer) com `modo='apply'`/`'preview'`, lê a resposta
-  e **afirma** `status` + presença dos `code`s esperados nas `issues`. Limpa o que aplicou ao final
-  (rollback dos `hotel_metas` tocados + delete da linha de log de teste + objeto do Storage).
-- **E2E de UI (Playwright):** para os casos visuais (banner de erro, badge âmbar, modal de preview,
-  modal de detalhe de issues) — 1 caso por estado (`ok` / `ok+avisos` / `parcial` / `erro`).
-- **Convenção:** todo fixture/linha de teste usa prefixo identificável (ex.: `filename` começando com
-  `__test_`) para limpeza segura, **sem** tocar uploads reais (como o `template-metas-2027.xlsx`).
+- **`tests/metas_upload/test_validacao.py`** — gera fixtures `.xlsx` em memória (`openpyxl`) e invoca a
+  Edge Function em **`modo='preview'`** (read-only, zero efeito colateral), afirmando `status` + os
+  `code`s esperados (e campos do `diff`). **19/19** cobrindo Fases 1–4 (T-OK, T-FMT, T-HDR, T-ROW,
+  T-VAL, T-BIZ, T-PRV). Roda contra produção sem tocar dado nenhum.
+- **`tests/metas_upload/gen_exemplos.py`** — gera os EXEMPLOS VISUAIS do histórico em `modo='apply'`
+  (nomes descritivos: `exemplo-ok` / `exemplo-aviso-meses-vazios` / `exemplo-parcial-celula-invalida` /
+  `exemplo-parcial-hotel-inexistente` / `exemplo-erro-cabecalho`), restaurando a UCAYALI ao original ao
+  final — os dados não mudam, mas as linhas ficam no log como referência visual.
+- **E2E de UI (Playwright):** validados banner por status, badges, **modal de preview** (diff + issues) e
+  **modal de detalhe**. *(Esses dois scripts vivem em `tests/`, que — como `supabase/` — não é versionado
+  pelo repo `WEBAPP/`.)*
 
 ---
 
