@@ -22,7 +22,7 @@ export interface ShopperRunRow {
   note: string | null;
 }
 
-const COOLDOWN_MS = 0; // cooldown removido (2026-06-07): reprocessa sem espera (limite só 3/dia)
+const COOLDOWN_MS = 15 * 60 * 1000; // 15 min entre coletas (espelha o RPC; o limite REAL é imposto no back-end)
 const POLL_MS = 2500;
 
 export interface ShopperRunState {
@@ -127,7 +127,7 @@ export function useShopperRun(hotelId: number): ShopperRunState {
   const isActive = triggering || run?.status === 'queued' || run?.status === 'running';
 
   let cooldownUntil: number | null = null;
-  if (rejection?.reason === 'cooldown_3h' && rejection.retryAfter) {
+  if (rejection?.reason === 'cooldown' && rejection.retryAfter) {
     cooldownUntil = Date.now() + rejection.retryAfter * 1000;
   } else if (run && !isActive && run.status !== 'error') {
     const until = new Date(run.requested_at).getTime() + COOLDOWN_MS;
@@ -140,7 +140,7 @@ export function useShopperRun(hotelId: number): ShopperRunState {
     isActive: Boolean(isActive),
     rejection,
     cooldownUntil,
-    dailyLimited: rejection?.reason === 'daily_limit_3',
+    dailyLimited: rejection?.reason === 'daily_limit',
     busy: run?.status === 'error' && run?.error_msg === 'worker_busy',
   };
 }

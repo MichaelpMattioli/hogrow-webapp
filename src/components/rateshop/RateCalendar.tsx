@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
-import { AlertTriangle, ChevronLeft, ChevronRight, X, RefreshCw, CalendarDays, Table2, Download, Users, Loader2 } from 'lucide-react';
+import { AlertTriangle, ChevronLeft, ChevronRight, X, RefreshCw, CalendarDays, Table2, Download, Users, Loader2, Clock } from 'lucide-react';
 import type { BookingRate, RateDaySummary } from '@/data/types';
 import { localDateKey } from '@/lib/utils';
 import { useShopperRun } from '@/hooks/useShopperRun';
@@ -480,6 +480,12 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange,
     return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')} às ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
   };
 
+  // Contagem regressiva do cooldown (mín. 15 min entre coletas) — formato M:SS.
+  const fmtCountdown = (ms: number) => {
+    const s = Math.max(0, Math.ceil(ms / 1000));
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  };
+
   const [y, m] = yearMonth.split('-').map(Number);
 
   const prevMonth = () => { const pm=m===1?12:m-1; const py=m===1?y-1:y; onMonthChange(`${py}-${String(pm).padStart(2,'0')}`); };
@@ -507,7 +513,12 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange,
       onClick={() => { if (!updateDisabled) void shopper.trigger(); }}
       disabled={updateDisabled}
       aria-label="Atualizar preços do rate shopper agora"
-      title={shopper.dailyLimited ? 'Limite de atualizações por dia atingido' : 'Buscar preços atualizados do Booking agora'}
+      title={
+        shopper.isActive ? 'Buscando preços atualizados…'
+        : shopper.dailyLimited ? 'Limite de 7 atualizações por dia atingido'
+        : cooldownLeftMs > 0 ? `Disponível em ${fmtCountdown(cooldownLeftMs)} (mín. 15 min entre coletas)`
+        : 'Buscar preços atualizados do Booking agora'
+      }
       style={{
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7,
         padding: big ? '9px 16px' : '6px 12px',
@@ -525,6 +536,8 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange,
         <><Loader2 size={big ? 14 : 11} className="animate-spin" /> Atualizando{shopperPct != null ? ` ${shopperPct}%` : '…'}</>
       ) : shopper.dailyLimited ? (
         <><AlertTriangle size={big ? 13 : 10} /> Limite diário</>
+      ) : cooldownLeftMs > 0 ? (
+        <><Clock size={big ? 13 : 10} /> Em {fmtCountdown(cooldownLeftMs)}</>
       ) : (
         <><RefreshCw size={big ? 14 : 11} /> Atualizar agora</>
       )}
