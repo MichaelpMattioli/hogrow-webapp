@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
-import { AlertTriangle, ChevronLeft, ChevronRight, X, RefreshCw, CalendarDays, Table2, Download, Users, Loader2, Clock } from 'lucide-react';
+import { AlertTriangle, ChevronLeft, ChevronRight, X, RefreshCw, CalendarDays, Table2, Download, Users, Loader2, Clock, CheckCircle2, HelpCircle } from 'lucide-react';
 import type { BookingRate, RateDaySummary } from '@/data/types';
 import { localDateKey } from '@/lib/utils';
 import { useShopperRun } from '@/hooks/useShopperRun';
@@ -22,11 +22,6 @@ function fmtBRL(v: number) {
 
 function dateOnly(value: string | null | undefined) {
   return value ? value.slice(0, 10) : null;
-}
-
-function fmtDateOnly(value: string) {
-  const [, month, day] = value.split('-');
-  return `${day}/${month}`;
 }
 
 function pctBgBorder(pct: number | null) {
@@ -477,7 +472,7 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange,
 
   const fmtScraped = (iso: string) => {
     const d = new Date(iso);
-    return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')} às ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')} às ${String(d.getHours()).padStart(2,'0')}h${String(d.getMinutes()).padStart(2,'0')}`;
   };
 
   // Contagem regressiva do cooldown (mín. 15 min entre coletas) — formato M:SS.
@@ -495,6 +490,17 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange,
   const dailyReached = shopper.dailyLimited || shopper.dailyUsed >= shopper.dailyLimit;
   const updateDisabled = shopper.isActive || cooldownLeftMs > 0 || dailyReached;
   const shopperPct = shopper.run?.progress_pct != null ? Math.round(Number(shopper.run.progress_pct)) : null;
+  const dailyRemaining = Math.max(0, shopper.dailyLimit - shopper.dailyUsed);
+
+  // "?" explicando por que o limite é 7/dia (controle de custo) — tooltip nativo.
+  const helpQuota = (
+    <span
+      title={`Limite de ${shopper.dailyLimit} coletas por dia para controlar os custos de extração do Booking. Para aumentar, fale com o administrador.`}
+      style={{ display: 'inline-flex', alignItems: 'center', cursor: 'help', flexShrink: 0 }}
+    >
+      <HelpCircle size={13} style={{ color: 'var(--text-m)' }} />
+    </span>
+  );
 
   const selectedDayRates = selectedDate ? visibleRates.filter(r => r.checkinDate === selectedDate) : [];
   const hasAnyData = visibleRates.length > 0;
@@ -506,9 +512,9 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange,
     background: active ? 'rgba(var(--accent-rgb),0.08)' : 'transparent',
   });
 
-  // Botão "Atualizar agora" (on-demand). big = fonte/padding maiores; full = ocupa 100%.
-  // Estados (precedência): rodando > limite diário (7/7) > cooldown (15min) > normal.
-  const updateButton = (big: boolean, full = false) => (
+  // Botão "Atualizar agora" (on-demand). big = fonte/padding maiores.
+  // Estados (precedência): rodando > limite diário > cooldown (15min) > normal.
+  const updateButton = (big: boolean) => (
     <button
       type="button"
       onClick={() => { if (!updateDisabled) void shopper.trigger(); }}
@@ -521,8 +527,7 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange,
         : 'Buscar preços atualizados do Booking agora'
       }
       style={{
-        display: full ? 'flex' : 'inline-flex', width: full ? '100%' : undefined,
-        alignItems: 'center', justifyContent: 'center', gap: 7,
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7,
         padding: big ? '9px 16px' : '6px 12px',
         borderRadius: 'var(--rx)',
         border: `1px solid ${updateDisabled && !shopper.isActive ? 'var(--border)' : 'var(--accent)'}`,
@@ -537,7 +542,7 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange,
       {shopper.isActive ? (
         <><Loader2 size={big ? 14 : 11} className="animate-spin" /> Atualizando{shopperPct != null ? ` ${shopperPct}%` : '…'}</>
       ) : dailyReached ? (
-        <><AlertTriangle size={big ? 13 : 10} /> Limite {shopper.dailyUsed}/{shopper.dailyLimit}</>
+        <><AlertTriangle size={big ? 13 : 10} /> Limite atingido</>
       ) : cooldownLeftMs > 0 ? (
         <><Clock size={big ? 13 : 10} /> Em {fmtCountdown(cooldownLeftMs)}</>
       ) : (
@@ -546,34 +551,41 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange,
     </button>
   );
 
-  // Cluster de atualização no header: status (última coleta / desatualizado) + X/7 hoje
-  // + 1 único botão. Fica âmbar quando os dados são de outro dia. Só renderiza com dados.
+  // Cluster de atualização (linha própria, abaixo do título): à esquerda o status
+  // "Atualizado/Desatualizado em DD/MM às HHhMM" + "X de 7 coletas restantes hoje" (?);
+  // à direita 1 único botão. Fica âmbar quando os dados são de outro dia.
   const updateCluster = () => {
     const amber = shopperNeedsUpdate;
     return (
       <div style={{
-        display: 'flex', flexDirection: 'column', gap: 6, minWidth: 176,
-        padding: '7px 9px', borderRadius: 'var(--rx)',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 20,
+        marginBottom: 16, padding: '12px 16px', borderRadius: 'var(--rx)',
         background: amber ? 'var(--amber-l)' : 'var(--surface-2)',
         border: `1px solid ${amber ? '#FDE68A' : 'var(--border-l)'}`,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, lineHeight: 1.25 }}>
-          {amber
-            ? <AlertTriangle size={12} style={{ color: 'var(--amber)', flexShrink: 0 }} />
-            : <RefreshCw size={12} style={{ color: 'var(--green)', flexShrink: 0 }} />}
-          <span style={{ color: 'var(--text-m)', fontWeight: 600 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, flexWrap: 'wrap' }}>
             {amber
-              ? <><span style={{ color: 'var(--amber)', fontWeight: 750 }}>Desatualizado</span>{lastScrapedDate ? <> · de {fmtDateOnly(lastScrapedDate)}</> : null}</>
-              : <>Coletado <strong style={{ color: 'var(--text)', fontWeight: 750 }}>{fmtScraped(lastScrapedAt!)}</strong></>}
-            <span> · <strong style={{ color: 'var(--text)', fontWeight: 700 }}>{shopper.dailyUsed}/{shopper.dailyLimit}</strong> hoje</span>
-          </span>
+              ? <AlertTriangle size={15} style={{ color: 'var(--amber)', flexShrink: 0 }} />
+              : <CheckCircle2 size={15} style={{ color: 'var(--green)', flexShrink: 0 }} />}
+            <span style={{ color: 'var(--text)', fontWeight: 700 }}>
+              {amber ? 'Desatualizado' : 'Atualizado'} em {fmtScraped(lastScrapedAt!)}
+            </span>
+            {amber && <span style={{ fontSize: 11.5, color: 'var(--amber)', fontWeight: 600 }}>— atualize para hoje</span>}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-m)', paddingLeft: 23 }}>
+            <span><strong style={{ color: 'var(--text)', fontWeight: 700 }}>{dailyRemaining}</strong> de {shopper.dailyLimit} coletas restantes hoje</span>
+            {helpQuota}
+          </div>
         </div>
-        {updateButton(false, true)}
-        {(shopper.busy || shopper.run?.status === 'error' || shopper.rejection?.reason.startsWith('erro')) && (
-          <span style={{ fontSize: 10, fontWeight: 600, color: shopper.busy ? 'var(--amber)' : 'var(--red)' }}>
-            {shopper.busy ? 'ocupado — tente em instantes' : 'falhou — tente de novo'}
-          </span>
-        )}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
+          {updateButton(true)}
+          {(shopper.busy || shopper.run?.status === 'error' || shopper.rejection?.reason.startsWith('erro')) && (
+            <span style={{ fontSize: 10, fontWeight: 600, color: shopper.busy ? 'var(--amber)' : 'var(--red)' }}>
+              {shopper.busy ? 'ocupado — tente em instantes' : 'falhou — tente de novo'}
+            </span>
+          )}
+        </div>
       </div>
     );
   };
@@ -596,9 +608,6 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange,
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Cluster único de atualização (status + X/7 + 1 botão); âmbar se de outro dia */}
-            {lastScrapedAt && updateCluster()}
-
             {/* Month nav */}
             <div className="flex items-center gap-1">
               <button type="button" aria-label="Mês anterior" onClick={prevMonth} style={{ width: 28, height: 28, border: '1px solid var(--border)', borderRadius: 'var(--rx)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', background:'transparent' }}>
@@ -644,6 +653,9 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange,
           </div>
         </div>
 
+        {/* ── Atualização (status + X/7 + botão), em linha própria ── */}
+        {lastScrapedAt && updateCluster()}
+
         {/* ── Header row 2: Pax filter ── */}
         {hasAnyData && allPersonsOptions.length > 0 && (
           <div style={{
@@ -679,14 +691,15 @@ export default function RateCalendar({ rates, loading, yearMonth, onMonthChange,
         ) : !hasAnyData ? (
           <div className="flex flex-col items-center justify-center" style={{ padding: '48px 0', gap: 12 }}>
             <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-m)' }}>
-              Sem coleta de preços para este mês
+              Nenhum preço coletado ainda
             </span>
             <span style={{ fontSize: 11, color: 'var(--text-m)', textAlign: 'center', maxWidth: 300 }}>
               O rate shopper é sob demanda — clique para buscar os preços do Booking agora.
             </span>
             {updateButton(true)}
-            <span style={{ fontSize: 10.5, color: 'var(--text-m)' }}>
-              {shopper.dailyUsed}/{shopper.dailyLimit} atualizações hoje · mín. 15 min entre coletas
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10.5, color: 'var(--text-m)' }}>
+              {dailyRemaining} de {shopper.dailyLimit} coletas restantes hoje · mín. 15 min entre coletas
+              {helpQuota}
             </span>
           </div>
         ) : view === 'table' ? (
