@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useMetasPage, useMetasAnual, saveHotelMeta, type MetaAnualRow } from '@/hooks/useSupabase';
 import type { HotelMeta } from '@/data/types';
+import MetasExcelCard from '@/components/metas/MetasExcelCard';
 
 type GoalField = 'receita' | 'ocupacao' | 'diaria';
 
@@ -420,7 +421,7 @@ export default function Metas() {
   const [mesAno, setMesAno] = useState(currentMes);
   const [query, setQuery] = useState('');
 
-  const { rows: anualRows, loading: anualLoading, error: anualError } = useMetasAnual(ano);
+  const { rows: anualRows, loading: anualLoading, error: anualError, reload: reloadAnual } = useMetasAnual(ano);
   const { rows, loading, error: metasError, reload } = useMetasPage(mesAno);
   const monthIdx = MONTHS.indexOf(mesAno);
 
@@ -559,26 +560,31 @@ export default function Metas() {
       {/* ── Conteúdo ── */}
       {view === 'anual' ? (
         <AnnualMetasTable rows={anualRows} ano={ano} query={query} loading={anualLoading} error={anualError} />
-      ) : loading ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 size={24} className="animate-spin" style={{ color: 'var(--accent)' }} />
-          <span className="ml-2" style={{ fontSize: 13, color: 'var(--text-m)' }}>Carregando...</span>
-        </div>
-      ) : metasError ? (
-        <div style={{ padding: 28, textAlign: 'center', color: 'var(--red)', fontWeight: 800 }}>{metasError}</div>
       ) : (
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r)', overflow: 'hidden', boxShadow: 'var(--sh)' }}>
-          <div className="metas-list-header" style={{ display: 'grid', gap: 14, alignItems: 'center', padding: '10px 18px', background: 'var(--bg)', borderBottom: '1px solid var(--border)', color: 'var(--text-m)', fontSize: 10, fontWeight: 900, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-            <span>Hotel</span>
-            <span>Metas</span>
-            <span style={{ width: 124, textAlign: 'center' }}>Status</span>
-          </div>
-          {filteredHotels.length === 0 ? (
-            <div style={{ padding: 42, textAlign: 'center', color: 'var(--text-m)', fontSize: 13, fontWeight: 700 }}>Nenhum hotel encontrado</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+          <MetasExcelCard ano={ano} rows={anualRows} onDone={() => { reloadAnual(); reload(); }} />
+          {loading ? (
+            <div className="flex items-center justify-center py-16">
+              <Loader2 size={24} className="animate-spin" style={{ color: 'var(--accent)' }} />
+              <span className="ml-2" style={{ fontSize: 13, color: 'var(--text-m)' }}>Carregando...</span>
+            </div>
+          ) : metasError ? (
+            <div style={{ padding: 28, textAlign: 'center', color: 'var(--red)', fontWeight: 800 }}>{metasError}</div>
           ) : (
-            filteredHotels.map(hotel => (
-              <HotelGoalRow key={hotel.id} hotel={hotel} meta={metaMap.get(hotel.id)} onSave={handleSave} />
-            ))
+            <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r)', overflow: 'hidden', boxShadow: 'var(--sh)' }}>
+              <div className="metas-list-header" style={{ display: 'grid', gap: 14, alignItems: 'center', padding: '10px 18px', background: 'var(--bg)', borderBottom: '1px solid var(--border)', color: 'var(--text-m)', fontSize: 10, fontWeight: 900, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                <span>Hotel</span>
+                <span>Metas</span>
+                <span style={{ width: 124, textAlign: 'center' }}>Status</span>
+              </div>
+              {filteredHotels.length === 0 ? (
+                <div style={{ padding: 42, textAlign: 'center', color: 'var(--text-m)', fontSize: 13, fontWeight: 700 }}>Nenhum hotel encontrado</div>
+              ) : (
+                filteredHotels.map(hotel => (
+                  <HotelGoalRow key={hotel.id} hotel={hotel} meta={metaMap.get(hotel.id)} onSave={handleSave} />
+                ))
+              )}
+            </div>
           )}
         </div>
       )}
