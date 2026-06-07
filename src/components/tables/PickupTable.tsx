@@ -2,7 +2,6 @@ import { useMemo, useState, useRef, useEffect } from 'react';
 import { CalendarDays, ChevronLeft, ChevronRight, Filter, Hash } from 'lucide-react';
 import type { BookingRate, PickupRow } from '@/data/types';
 import { Skeleton } from '@/components/ui/Skeleton';
-import HeaderMonthReference from '@/components/ui/HeaderMonthReference';
 
 // ─── Formatting helpers ───────────────────────────────────────────────
 
@@ -331,6 +330,7 @@ interface PickupTableProps {
   onCurrentMonthSelect?: () => void;
   shopperRates: BookingRate[];
   loading?: boolean;
+  viewToggle?: React.ReactNode;
 }
 
 const cell = (extra?: React.CSSProperties): React.CSSProperties => ({
@@ -391,6 +391,7 @@ export default function PickupTable({
   onCurrentMonthSelect,
   shopperRates,
   loading = false,
+  viewToggle,
 }: PickupTableProps) {
   const validData = useMemo(
     () => data.filter(r => Boolean(r.data_extracao && r.data_referencia)),
@@ -540,9 +541,9 @@ export default function PickupTable({
     <div className="card-in" style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:'var(--r)', padding:'20px', animationDelay:'0.2s' }}>
       {/* Header */}
       <div className="flex items-start justify-between" style={{ gap:12, flexWrap:'wrap', marginBottom: 14 }}>
-        <div style={{ minWidth: 180 }}>
-          <h3 className="text-sm font-semibold" style={{ letterSpacing:'-0.2px' }}>Pick-Up Diário</h3>
-          <p className="text-[11.5px] mt-0.5" style={{ color:'var(--text-m)' }}>
+        <div style={{ minWidth: 180, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {viewToggle}
+          <p className="text-[11.5px]" style={{ color:'var(--text-m)' }}>
             {filtered.length} datas na tabela
             {hasPickup
               ? ` · comparação com extração anterior`
@@ -551,18 +552,6 @@ export default function PickupTable({
         </div>
 
         <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap', justifyContent:'flex-end' }}>
-          {activeReferenceMonth && (
-            <HeaderMonthReference
-              selectedMonth={activeReferenceMonth}
-              availableMonths={availableReferenceMonths}
-              onSelect={month => selectReference(month)}
-              selectedPosition={activeExtracao ?? undefined}
-              availablePositionDates={calendarExtracoes}
-              onPositionSelect={selectExtracao}
-              onCurrentMonthSelect={onCurrentMonthSelect}
-            />
-          )}
-
           <button
             onClick={() => setWholeValues(v => !v)}
             title="Arredondar valores da tabela"
@@ -655,8 +644,23 @@ export default function PickupTable({
         borderBottom: '1px solid var(--border-l)',
       }}>
         <div style={axisPanel(stayAxis)}>
-          <div style={axisLabel(stayAxis)}>
-            MÊS DAS DIÁRIAS
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, marginBottom:8 }}>
+            <span style={{ ...axisLabel(stayAxis), marginBottom:0 }}>MÊS DAS DIÁRIAS</span>
+            {onCurrentMonthSelect && (
+              <button
+                type="button"
+                onClick={onCurrentMonthSelect}
+                title="Voltar ao mês atual e à última extração"
+                aria-label="Voltar ao mês atual e à última extração"
+                style={{
+                  display:'inline-flex', alignItems:'center', gap:4, padding:'2px 8px', borderRadius:99,
+                  border:`1px solid ${stayAxis.border}`, background:'var(--surface)', color: stayAxis.text,
+                  fontSize:10, fontWeight:800, cursor:'pointer',
+                }}
+              >
+                <CalendarDays size={11} /> Mês atual
+              </button>
+            )}
           </div>
           <div style={{ display:'grid', gridTemplateColumns:'34px minmax(0,1fr) 34px', alignItems:'center', gap:10 }}>
             <button

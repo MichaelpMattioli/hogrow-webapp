@@ -187,9 +187,10 @@ interface MonthRow {
 interface Props {
   hotelId: number;
   pickupRows?: PickupRow[];
+  viewToggle?: React.ReactNode;
 }
 
-export default function PickupMensalTable({ hotelId }: Props) {
+export default function PickupMensalTable({ hotelId, viewToggle }: Props) {
   const [ano, setAno] = useState(new Date().getFullYear());
   const { rows, loading, error } = usePickupMensalKpis(hotelId, ano);
 
@@ -246,10 +247,10 @@ export default function PickupMensalTable({ hotelId }: Props) {
         gap: 12,
         flexWrap: 'wrap',
       }}>
-        <div style={{ minWidth: 0 }}>
-          <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>Pickup Mensal</span>
-          <span style={{ fontSize: 11, color: 'var(--text-m)', marginLeft: 8 }}>
-            {hotelNome ? `${hotelNome} · ${rows.length} meses com dados` : 'ano completo por meses disponiveis'}
+        <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {viewToggle}
+          <span style={{ fontSize: 11, color: 'var(--text-m)' }}>
+            {hotelNome ? `${hotelNome} · ${rows.length} meses com dados` : 'ano completo por meses disponíveis'}
           </span>
         </div>
 

@@ -37,74 +37,58 @@ export default function PickupSection({
 }: Props) {
   const [view, setView] = useState<PickupView>('diario');
 
-  const toggleBtn = (active: boolean): React.CSSProperties => ({
-    display: 'flex',
-    alignItems: 'center',
-    gap: 6,
-    padding: '5px 12px',
-    borderRadius: 7,
-    fontSize: 12,
-    fontWeight: 600,
-    cursor: 'pointer',
-    transition: 'all 0.15s',
-    border: active ? '1.5px solid var(--accent)' : '1px solid var(--border)',
-    background: active ? 'var(--accent-l)' : 'transparent',
+  // Segmented control (Diário | Mensal) — renderizado DENTRO do card de cada visão
+  // (antes flutuava solto acima do card).
+  const segBtn = (active: boolean): React.CSSProperties => ({
+    display: 'flex', alignItems: 'center', gap: 6,
+    padding: '5px 13px', borderRadius: 6, fontSize: 12, fontWeight: 700,
+    cursor: 'pointer', border: 'none', transition: 'all 0.15s',
+    background: active ? 'var(--surface)' : 'transparent',
     color: active ? 'var(--accent)' : 'var(--text-m)',
+    boxShadow: active ? 'var(--sh)' : 'none',
   });
+  const viewToggle = (
+    <div role="tablist" aria-label="Visão do pick-up" style={{
+      display: 'inline-flex', gap: 3, padding: 3, borderRadius: 8,
+      background: 'var(--surface-2)', border: '1px solid var(--border-l)',
+    }}>
+      <button type="button" role="tab" aria-selected={view === 'diario'} style={segBtn(view === 'diario')} onClick={() => setView('diario')}>
+        <List size={13} /> Diário
+      </button>
+      <button type="button" role="tab" aria-selected={view === 'mensal'} style={segBtn(view === 'mensal')} onClick={() => setView('mensal')}>
+        <CalendarRange size={13} /> Mensal
+      </button>
+    </div>
+  );
 
-  const description = view === 'diario'
-    ? 'mês das diárias e extração dos dados'
-    : 'KPIs mensais do ano';
+  if (view === 'mensal') {
+    return <PickupMensalTable hotelId={hotelId} pickupRows={pickupRows} viewToggle={viewToggle} />;
+  }
 
-  return (
-    <div>
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        marginBottom: 12,
-        gap: 12,
-        flexWrap: 'wrap',
-      }}>
-        <div>
-          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>Pick-up</span>
-          <span style={{ fontSize: 11, color: 'var(--text-m)', marginLeft: 8 }}>
-            {description}
-          </span>
-        </div>
-
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          <button style={toggleBtn(view === 'diario')} onClick={() => setView('diario')}>
-            <List size={13} />
-            Diário
-          </button>
-          <button style={toggleBtn(view === 'mensal')} onClick={() => setView('mensal')}>
-            <CalendarRange size={13} />
-            Mensal
-          </button>
-        </div>
-      </div>
-
-      {view === 'diario' && error && !loading ? (
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r)', padding: 32, textAlign: 'center', color: 'var(--red)', fontSize: 12, fontWeight: 700 }}>
+  if (error && !loading) {
+    return (
+      <div className="card-in" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r)', padding: 20 }}>
+        <div style={{ marginBottom: 16 }}>{viewToggle}</div>
+        <div style={{ padding: 28, textAlign: 'center', color: 'var(--red)', fontSize: 12, fontWeight: 700 }}>
           {error}
         </div>
-      ) : view === 'diario' ? (
-        <PickupTable
-          data={pickupRows}
-          selectedMonths={selectedMeses}
-          availableMonths={availableMeses}
-          onReferenceChange={onReferenceChange}
-          selectedPosition={selectedPosition}
-          availablePositionDates={availablePositionDates}
-          onPositionChange={onPositionChange}
-          onCurrentMonthSelect={onCurrentMonthSelect}
-          shopperRates={shopperRates}
-          loading={loading}
-        />
-      ) : (
-        <PickupMensalTable hotelId={hotelId} pickupRows={pickupRows} />
-      )}
-    </div>
+      </div>
+    );
+  }
+
+  return (
+    <PickupTable
+      data={pickupRows}
+      selectedMonths={selectedMeses}
+      availableMonths={availableMeses}
+      onReferenceChange={onReferenceChange}
+      selectedPosition={selectedPosition}
+      availablePositionDates={availablePositionDates}
+      onPositionChange={onPositionChange}
+      onCurrentMonthSelect={onCurrentMonthSelect}
+      shopperRates={shopperRates}
+      loading={loading}
+      viewToggle={viewToggle}
+    />
   );
 }
