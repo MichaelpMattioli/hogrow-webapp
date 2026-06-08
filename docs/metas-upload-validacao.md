@@ -262,9 +262,9 @@ A coluna **Observação** mostra a 1ª mensagem de erro (ou resumo de alertas); 
   nos casos de muitas linhas/colunas com problema.
 - **Cobre:** T-PRV-01 (diff). E2E Playwright: preview (parcial, 8 a aplicar) + detalhe.
 
-### Fase 5 — Sanidade avançada (opcional)
-- **Função:** `A-VAL-01/02/03/05` (fração, incoerência, outlier vs `hotel_receita_diaria`).
-- **Cobre:** T-VAL-adv-*.
+### Fase 5 — Sanidade avançada (parcial)
+- **`A-VAL-01` FEITO (2026-06-07):** ocupação entre 0 e 1 → alerta de fração (aceita, mas avisa "use 85, não 0,85"). Testado em `test_edge.py`.
+- **Pendente:** `A-VAL-02` (dm×receita incoerente), `A-VAL-03` (outlier vs `hotel_receita_diaria`), `A-VAL-05` (occ=100 suspeito).
 
 ---
 
@@ -330,3 +330,42 @@ Cada caso = 1 fixture `.xlsx` + status/issues esperados. `[base]` = 1 hotel-clie
 - **§5–7** mapeiam todos os erros, alertas e infos com código estável.
 - **§8** lista as 5 decisões de política (P-1 e P-3 são as críticas).
 - **§9** entrega em 5 fases incrementais; **§10** dá a matriz de testes 1:1 com os códigos.
+
+---
+
+## 13. Cobertura — implementado × testado × gaps (2026-06-07)
+
+**44 casos automatizados** em `tests/metas_upload/`: `test_validacao.py` (19) + `test_stress.py` (5,
+muitas linhas/colunas) + `test_edge.py` (20, bordas). Todos em `modo=preview` (zero efeito colateral).
+
+### ✅ Implementado **e** testado
+| Código(s) | Onde é testado |
+|---|---|
+| `E-FMT-01/02/03/04` | validacao, edge |
+| `E-HDR-02/03/04` | validacao, edge |
+| `E-ROW-01/02/03/04` | validacao, stress, edge |
+| `E-VAL-01/02/03` | validacao, stress, edge |
+| `A-BIZ-01/02/03/05/06/07/08` | validacao, stress, edge |
+| `A-VAL-01` (ocupação em fração 0,85) | edge |
+| `A-SYS-01`, `E-DB-01/02` | implementados; difícil disparar em teste (falha de storage/DB) |
+
+### 🔢 Tratamento de números (novo — testado em `test_edge.py`)
+Aceita **formato BR** (`1.000.000,50`, `935.850,75`, milhar sem decimal `1.018.160`), prefixo **`R$`**,
+sufixo **`%`** (ocupação `85%`→85) e notação científica (`1E6`). Célula só-espaço = vazia (mantida).
+Texto/booleano = `E-VAL-01`. 1 ponto sem vírgula segue como decimal US (`1.5`=1,5) — caso ambíguo raro
+(o template usa números crus, sem separador).
+
+### ⚠️ Documentado mas **NÃO** implementado (gaps conscientes)
+| Código | Situação |
+|---|---|
+| `E-FMT-05` (arquivo grande) | Sem pré-checagem; o limite (50 MB) é do bucket → vira `A-SYS-01`. |
+| `E-HDR-01` (1ª linha não é cabeçalho) | Na prática colapsa em `E-HDR-02`. |
+| `E-DB-03` (falha de storage) | Representado como **`A-SYS-01`** (alerta → `parcial`), não código próprio. |
+| `A-BIZ-04` (zeragem/remoção) | **Não existe**: por P-1 célula vazia mantém. Apagar exigirá um fluxo de exclusão explícito (futuro). |
+| `A-VAL-02/03/05` (Fase 5) | Incoerência dm×receita, outlier vs `hotel_receita_diaria`, occ=100 suspeito — **pendentes**. |
+| `I-01/02/03` (colunas/linhas/abas extras) | Tratados em silêncio (ignorados); não emitem `info`. |
+
+### 🔎 Bordas confirmadas
+ID fracionário/0/negativo → `E-ROW-02`. Categoria insensível a caixa/espaço. Meses invertidos →
+`E-HDR-04`. Colunas e abas extras ignoradas. `#REF!` (fórmula com erro) é lido como **vazio**
+(comportamento seguro = mantém a meta; baixa prioridade).
