@@ -5,9 +5,10 @@ import {
 } from 'lucide-react';
 import MetasModal from '@/components/metas/MetasModal';
 import {
-  buildMockFeriados, chipData, DOW_SHORT, HOTEIS, isRecorrente, MES_FULL, OCORRENCIAS, recorrenciaLabel,
+  chipData, DOW_SHORT, isRecorrente, MES_FULL, OCORRENCIAS, recorrenciaLabel,
   type Abrangencia, type Feriado, type RecTipo, type Recorrencia,
-} from '@/data/feriadosMock';
+} from '@/data/eventos';
+import { useEventos, useHoteisCliente, useEventoMutations } from '@/hooks/useEventos';
 
 const ABRANG: Record<Abrangencia, { label: string; color: string; bg: string }> = {
   nacional:  { label: 'Nacional',  color: 'var(--accent)', bg: 'var(--accent-l)' },
@@ -207,7 +208,9 @@ const SEGS: { id: Seg; label: string; Icon: typeof MapPin }[] = [
 ];
 
 export default function Feriados() {
-  const [feriados, setFeriados] = useState<Feriado[]>(() => buildMockFeriados());
+  const { data: feriados = [], isLoading } = useEventos();
+  const { data: hoteis = [] } = useHoteisCliente();
+  const ev = useEventoMutations();
   const [ano, setAno] = useState(2026);
   const [seg, setSeg] = useState<Seg>('cidades');
   const [open, setOpen] = useState<Record<string, boolean>>({});
@@ -215,18 +218,19 @@ export default function Feriados() {
 
   const cidades = useMemo(() => {
     const m = new Map<string, { cidade: string; uf: string; hoteis: number }>();
-    HOTEIS.forEach(h => {
+    hoteis.forEach(h => {
+      if (!h.cidade || !h.estado) return;
       const k = `${h.cidade}/${h.estado}`;
       const e = m.get(k) ?? { cidade: h.cidade, uf: h.estado, hoteis: 0 };
       e.hoteis++; m.set(k, e);
     });
     return [...m.values()].sort((a, b) => a.cidade.localeCompare(b.cidade));
-  }, []);
+  }, [hoteis]);
   const estados = useMemo(() => {
     const m = new Map<string, { uf: string; hoteis: number }>();
-    HOTEIS.forEach(h => { const e = m.get(h.estado) ?? { uf: h.estado, hoteis: 0 }; e.hoteis++; m.set(h.estado, e); });
+    hoteis.forEach(h => { if (!h.estado) return; const e = m.get(h.estado) ?? { uf: h.estado, hoteis: 0 }; e.hoteis++; m.set(h.estado, e); });
     return [...m.values()].sort((a, b) => a.uf.localeCompare(b.uf));
-  }, []);
+  }, [hoteis]);
 
   const isOpen = (k: string, def = false) => open[k] ?? def;
   const toggleOpen = (k: string, def = false) => setOpen(s => ({ ...s, [k]: !(s[k] ?? def) }));
@@ -234,13 +238,13 @@ export default function Feriados() {
     feriados.filter(f => pred(f) && (f.rec.tipo !== 'unica' && f.rec.tipo !== 'anual' ? true : (f.rec.data ?? '').startsWith(String(ano))))
       .sort((a, b) => (a.rec.data ?? 'z').localeCompare(b.rec.data ?? 'z'));
 
-  const toggle = (id: string) => setFeriados(fs => fs.map(f => f.id === id ? { ...f, ativo: !f.ativo } : f));
-  const remove = (id: string) => setFeriados(fs => fs.filter(f => f.id !== id));
+  const toggle = (f: Feriado) => { void ev.toggle(f.id, !f.ativo); };
+  const remove = (id: string) => { void ev.remove(id); };
   function save(d: { id?: string; nome: string; rec: Recorrencia }) {
     if (!modal) return;
-    setFeriados(fs => d.id
-      ? fs.map(f => f.id === d.id ? { ...f, nome: d.nome, rec: d.rec } : f)
-      : [...fs, { id: `f-${Date.now()}`, nome: d.nome, rec: d.rec, ativo: true, abrangencia: modal.scope.abrangencia, uf: modal.scope.uf, cidade: modal.scope.cidade, hotelId: modal.scope.hotelId }]);
+    void (d.id
+      ? ev.update(d.id, { nome: d.nome, rec: d.rec })
+      : ev.create({ nome: d.nome, rec: d.rec, abrangencia: modal.scope.abrangencia, uf: modal.scope.uf, cidade: modal.scope.cidade, hotelId: modal.scope.hotelId }));
     setModal(null);
   }
 
@@ -278,6 +282,9 @@ export default function Feriados() {
         </div>
       </div>
 
+      {isLoading ? (
+        <div style={{ padding: 48, textAlign: 'center', color: 'var(--text-m)', fontSize: 13, fontWeight: 600 }}>Carregando eventos…</div>
+      ) : (<>
       {/* CIDADES */}
       {seg === 'cidades' && cidades.map((c, i) => {
         const k = `c-${c.cidade}-${c.uf}`;
@@ -290,7 +297,7 @@ export default function Feriados() {
             onAdd={() => setModal({ feriado: null, scope: { abrangencia: 'municipal', cidade: c.cidade, uf: c.uf, contexto: `Feriado municipal · ${c.cidade}/${c.uf} — aplica a ${c.hoteis} ${c.hoteis === 1 ? 'hotel' : 'hotéis'}`, hoteis: c.hoteis } })}>
             {fs.length === 0
               ? <div style={{ padding: 26, textAlign: 'center', fontSize: 12.5, color: 'var(--text-m)' }}>Nenhum feriado municipal. Clique em <strong>Adicionar</strong>.</div>
-              : fs.map(f => <FeriadoRow key={f.id} f={f} onToggle={() => toggle(f.id)} onEdit={() => setModal({ feriado: f, scope: { abrangencia: 'municipal', cidade: c.cidade, uf: c.uf, contexto: `Feriado municipal · ${c.cidade}/${c.uf}`, hoteis: c.hoteis } })} onDelete={() => remove(f.id)} />)}
+              : fs.map(f => <FeriadoRow key={f.id} f={f} onToggle={() => toggle(f)} onEdit={() => setModal({ feriado: f, scope: { abrangencia: 'municipal', cidade: c.cidade, uf: c.uf, contexto: `Feriado municipal · ${c.cidade}/${c.uf}`, hoteis: c.hoteis } })} onDelete={() => remove(f.id)} />)}
           </Expander>
         );
       })}
@@ -307,7 +314,7 @@ export default function Feriados() {
             onAdd={() => setModal({ feriado: null, scope: { abrangencia: 'estadual', uf: e.uf, contexto: `Feriado estadual · ${e.uf} — aplica a ${e.hoteis} ${e.hoteis === 1 ? 'hotel' : 'hotéis'}`, hoteis: e.hoteis } })}>
             {fs.length === 0
               ? <div style={{ padding: 26, textAlign: 'center', fontSize: 12.5, color: 'var(--text-m)' }}>Nenhum feriado estadual. Clique em <strong>Adicionar</strong>.</div>
-              : fs.map(f => <FeriadoRow key={f.id} f={f} onToggle={() => toggle(f.id)} onEdit={() => setModal({ feriado: f, scope: { abrangencia: 'estadual', uf: e.uf, contexto: `Feriado estadual · ${e.uf}`, hoteis: e.hoteis } })} onDelete={() => remove(f.id)} />)}
+              : fs.map(f => <FeriadoRow key={f.id} f={f} onToggle={() => toggle(f)} onEdit={() => setModal({ feriado: f, scope: { abrangencia: 'estadual', uf: e.uf, contexto: `Feriado estadual · ${e.uf}`, hoteis: e.hoteis } })} onDelete={() => remove(f.id)} />)}
           </Expander>
         );
       })}
@@ -318,16 +325,16 @@ export default function Feriados() {
         const ativos = fs.filter(f => f.ativo).length;
         return (
           <Expander open onToggle={() => {}} icon={<Flag size={17} />} title="Feriados nacionais"
-            sub={`Padrão do Brasil — valem para todos os ${HOTEIS.length} hotéis`}
+            sub={`Padrão do Brasil — valem para todos os ${hoteis.length} hotéis`}
             badges={badge(ativos, `de ${fs.length} ativos`, 'var(--green)')}
-            onAdd={() => setModal({ feriado: null, scope: { abrangencia: 'nacional', contexto: `Feriado nacional — aplica a todos os ${HOTEIS.length} hotéis`, hoteis: HOTEIS.length } })}>
-            {fs.map(f => <FeriadoRow key={f.id} f={f} onToggle={() => toggle(f.id)} onEdit={() => setModal({ feriado: f, scope: { abrangencia: 'nacional', contexto: 'Feriado nacional', hoteis: HOTEIS.length } })} onDelete={() => remove(f.id)} />)}
+            onAdd={() => setModal({ feriado: null, scope: { abrangencia: 'nacional', contexto: `Feriado nacional — aplica a todos os ${hoteis.length} hotéis`, hoteis: hoteis.length } })}>
+            {fs.map(f => <FeriadoRow key={f.id} f={f} onToggle={() => toggle(f)} onEdit={() => setModal({ feriado: f, scope: { abrangencia: 'nacional', contexto: 'Feriado nacional', hoteis: hoteis.length } })} onDelete={() => remove(f.id)} />)}
           </Expander>
         );
       })()}
 
       {/* HOTÉIS — eventos exclusivos de um hotel */}
-      {seg === 'hoteis' && HOTEIS.map((h, i) => {
+      {seg === 'hoteis' && hoteis.map((h, i) => {
         const k = `h-${h.hotelId}`;
         const fs = list(f => f.abrangencia === 'hotel' && f.hotelId === h.hotelId);
         const open_ = isOpen(k, i === 0);
@@ -338,14 +345,15 @@ export default function Feriados() {
             onAdd={() => setModal({ feriado: null, scope: { abrangencia: 'hotel', hotelId: h.hotelId, contexto: `Evento exclusivo · ${h.nome}`, hoteis: 1 } })}>
             {fs.length === 0
               ? <div style={{ padding: 26, textAlign: 'center', fontSize: 12.5, color: 'var(--text-m)' }}>Nenhum evento exclusivo. Ex.: aniversário do hotel. Clique em <strong>Adicionar</strong>.</div>
-              : fs.map(f => <FeriadoRow key={f.id} f={f} onToggle={() => toggle(f.id)} onEdit={() => setModal({ feriado: f, scope: { abrangencia: 'hotel', hotelId: h.hotelId, contexto: `Evento exclusivo · ${h.nome}`, hoteis: 1 } })} onDelete={() => remove(f.id)} />)}
+              : fs.map(f => <FeriadoRow key={f.id} f={f} onToggle={() => toggle(f)} onEdit={() => setModal({ feriado: f, scope: { abrangencia: 'hotel', hotelId: h.hotelId, contexto: `Evento exclusivo · ${h.nome}`, hoteis: 1 } })} onDelete={() => remove(f.id)} />)}
           </Expander>
         );
       })}
 
       <p style={{ fontSize: 11, color: 'var(--text-m)', textAlign: 'center', fontWeight: 500 }}>
-        Dados de exemplo (mock) — por abrangência (país · estado · cidade · hotel) e recorrência pontual ou repetida.
+        Por abrangência (país · estado · cidade · hotel) e recorrência pontual ou repetida.
       </p>
+      </>)}
 
       {modal && <FeriadoForm feriado={modal.feriado} scope={modal.scope} ano={ano} onSave={save} onClose={() => setModal(null)} />}
     </div>
