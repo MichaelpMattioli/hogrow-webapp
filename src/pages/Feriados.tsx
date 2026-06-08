@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
   Building2, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, Flag,
-  MapPin, Pencil, Plus, Repeat, Trash2,
+  Hotel, MapPin, Pencil, Plus, Repeat, Trash2,
 } from 'lucide-react';
 import MetasModal from '@/components/metas/MetasModal';
 import {
@@ -13,9 +13,10 @@ const ABRANG: Record<Abrangencia, { label: string; color: string; bg: string }> 
   nacional:  { label: 'Nacional',  color: 'var(--accent)', bg: 'var(--accent-l)' },
   estadual:  { label: 'Estadual',  color: 'var(--gold)',   bg: 'var(--gold-l)' },
   municipal: { label: 'Municipal', color: 'var(--green)',  bg: 'var(--green-l)' },
+  hotel:     { label: 'Hotel',     color: 'var(--amber)',  bg: 'var(--amber-l)' },
 };
 
-type Scope = { abrangencia: Abrangencia; uf?: string; cidade?: string; contexto: string; hoteis: number };
+type Scope = { abrangencia: Abrangencia; uf?: string; cidade?: string; hotelId?: number; contexto: string; hoteis: number };
 
 // ─── peças ───────────────────────────────────────────────────────
 function Switch({ on, onClick, label }: { on: boolean; onClick: () => void; label: string }) {
@@ -197,11 +198,12 @@ function FeriadoForm({ feriado, scope, ano, onSave, onClose }: {
 // ════════════════════════════════════════════════════════════════
 //  PÁGINA
 // ════════════════════════════════════════════════════════════════
-type Seg = 'cidades' | 'estados' | 'nacionais';
+type Seg = 'cidades' | 'estados' | 'nacionais' | 'hoteis';
 const SEGS: { id: Seg; label: string; Icon: typeof MapPin }[] = [
   { id: 'cidades', label: 'Cidades', Icon: MapPin },
   { id: 'estados', label: 'Estados', Icon: Building2 },
   { id: 'nacionais', label: 'Nacionais', Icon: Flag },
+  { id: 'hoteis', label: 'Hotéis', Icon: Hotel },
 ];
 
 export default function Feriados() {
@@ -238,7 +240,7 @@ export default function Feriados() {
     if (!modal) return;
     setFeriados(fs => d.id
       ? fs.map(f => f.id === d.id ? { ...f, nome: d.nome, rec: d.rec } : f)
-      : [...fs, { id: `f-${Date.now()}`, nome: d.nome, rec: d.rec, ativo: true, abrangencia: modal.scope.abrangencia, uf: modal.scope.uf, cidade: modal.scope.cidade }]);
+      : [...fs, { id: `f-${Date.now()}`, nome: d.nome, rec: d.rec, ativo: true, abrangencia: modal.scope.abrangencia, uf: modal.scope.uf, cidade: modal.scope.cidade, hotelId: modal.scope.hotelId }]);
     setModal(null);
   }
 
@@ -253,9 +255,9 @@ export default function Feriados() {
         <div style={{ minWidth: 200 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
             <span style={{ width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 'var(--rx)', background: 'rgba(255,170,1,0.16)', color: 'var(--gold)' }}><CalendarDays size={17} /></span>
-            <h2 style={{ fontSize: 20, fontWeight: 900, letterSpacing: '-0.3px' }}>Feriados</h2>
+            <h2 style={{ fontSize: 20, fontWeight: 900, letterSpacing: '-0.3px' }}>Eventos e Feriados</h2>
           </div>
-          <p style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.68)', fontWeight: 550 }}>Por abrangência — valem para o grupo de hotéis de cada cidade, estado ou do país</p>
+          <p style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.68)', fontWeight: 550 }}>Feriados e datas comemorativas por abrangência — país, estado, cidade ou hotel</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           <div style={{ display: 'flex', gap: 3, padding: 3, borderRadius: 'calc(var(--rx) + 3px)', background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.18)' }}>
@@ -324,8 +326,25 @@ export default function Feriados() {
         );
       })()}
 
+      {/* HOTÉIS — eventos exclusivos de um hotel */}
+      {seg === 'hoteis' && HOTEIS.map((h, i) => {
+        const k = `h-${h.hotelId}`;
+        const fs = list(f => f.abrangencia === 'hotel' && f.hotelId === h.hotelId);
+        const open_ = isOpen(k, i === 0);
+        return (
+          <Expander key={k} open={open_} onToggle={() => toggleOpen(k, i === 0)} icon={<Hotel size={17} />}
+            title={h.nome} sub={`Eventos exclusivos — só deste hotel · ${h.cidade}/${h.estado}`}
+            badges={badge(fs.length, fs.length === 1 ? 'evento' : 'eventos', 'var(--amber)')}
+            onAdd={() => setModal({ feriado: null, scope: { abrangencia: 'hotel', hotelId: h.hotelId, contexto: `Evento exclusivo · ${h.nome}`, hoteis: 1 } })}>
+            {fs.length === 0
+              ? <div style={{ padding: 26, textAlign: 'center', fontSize: 12.5, color: 'var(--text-m)' }}>Nenhum evento exclusivo. Ex.: aniversário do hotel. Clique em <strong>Adicionar</strong>.</div>
+              : fs.map(f => <FeriadoRow key={f.id} f={f} onToggle={() => toggle(f.id)} onEdit={() => setModal({ feriado: f, scope: { abrangencia: 'hotel', hotelId: h.hotelId, contexto: `Evento exclusivo · ${h.nome}`, hoteis: 1 } })} onDelete={() => remove(f.id)} />)}
+          </Expander>
+        );
+      })}
+
       <p style={{ fontSize: 11, color: 'var(--text-m)', textAlign: 'center', fontWeight: 500 }}>
-        Dados de exemplo (mock) — registro por abrangência (cidade · estado · país) e recorrência pontual ou repetida.
+        Dados de exemplo (mock) — por abrangência (país · estado · cidade · hotel) e recorrência pontual ou repetida.
       </p>
 
       {modal && <FeriadoForm feriado={modal.feriado} scope={modal.scope} ano={ano} onSave={save} onClose={() => setModal(null)} />}

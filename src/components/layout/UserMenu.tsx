@@ -4,7 +4,7 @@ import { CalendarDays, ChevronDown, Target } from 'lucide-react';
 
 const ITEMS = [
   { to: '/metas', label: 'Metas', desc: 'Receita, ocupação e diária por hotel', Icon: Target },
-  { to: '/feriados', label: 'Feriados', desc: 'Nacionais e locais por hotel', Icon: CalendarDays },
+  { to: '/feriados', label: 'Eventos e Feriados', desc: 'Feriados e datas comemorativas', Icon: CalendarDays },
 ];
 
 // Menu da conta (estilo GitHub): clica na bolinha → dropdown com as páginas de definição.
