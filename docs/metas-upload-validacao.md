@@ -249,8 +249,11 @@ com a lista). Hoje ela mostra texto genérico; com isso vira detalhada.
 - **Função:** `modo='preview'` valida + calcula o **diff** (`criadas/substituidas/mantidas/inalteradas/
   aplicar/ignored/hoteisAusentes`) **sem gravar** (nem upsert, nem storage, nem log).
 - **Front:** escolher o arquivo chama o preview → **modal** (`MetasModal`) com os números do diff +
-  lista de issues categorizada (erro/alerta/info) → **Confirmar · aplicar N**. No histórico, cada linha
-  é **clicável** → modal com todas as issues daquele envio. Componente reusável `IssueList`.
+  lista de issues → **Confirmar · aplicar N**. No histórico, cada linha é **clicável** → modal com as
+  issues daquele envio. Componente reusável `IssueList` **agrupa por tipo (código)**: 1 linha por tipo
+  com contagem + resumo condensado do "onde" (hotéis "90000 · 90001 … +76"; células "UCAYALI · Receita ·
+  Jan–Dez"), expansível sob demanda (cap 60). Colapsa a repetição (80 erros iguais → 1 linha) — crucial
+  nos casos de muitas linhas/colunas com problema.
 - **Cobre:** T-PRV-01 (diff). E2E Playwright: preview (parcial, 8 a aplicar) + detalhe.
 
 ### Fase 5 — Sanidade avançada (opcional)
