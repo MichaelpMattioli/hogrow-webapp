@@ -1,10 +1,10 @@
-import { LayoutDashboard, Hotel, Search, Bell, Target } from 'lucide-react';
+import { LayoutDashboard, Hotel, Search, Bell } from 'lucide-react';
 import { NavLink, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
+import UserMenu from './UserMenu';
 
 const tabs = [
   { id: '/',         label: 'Home',     icon: LayoutDashboard },
   { id: '/clientes', label: 'Clientes', icon: Hotel },
-  { id: '/metas',    label: 'Metas',    icon: Target },
 ];
 
 export default function Navbar() {
@@ -120,13 +120,7 @@ export default function Navbar() {
             style={{ top: 5, right: 6, width: 6, height: 6, background: 'var(--red)', border: '1.5px solid var(--surface)' }}
           />
         </button>
-        <div
-          className="navbar-user flex items-center justify-center rounded-full text-[11px] font-semibold text-white"
-          aria-hidden="true"
-          style={{ width: 34, height: 34, background: 'linear-gradient(135deg, #1D2C5C, #FFAA01)' }}
-        >
-          VA
-        </div>
+        <UserMenu />
       </div>
     </header>
   );

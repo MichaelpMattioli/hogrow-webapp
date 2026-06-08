@@ -10,6 +10,7 @@ const Home           = lazy(() => import('@/pages/Home'));
 const Clientes       = lazy(() => import('@/pages/Clientes'));
 const ClienteDetalhe = lazy(() => import('@/pages/ClienteDetalhe'));
 const Metas          = lazy(() => import('@/pages/Metas'));
+const Feriados       = lazy(() => import('@/pages/Feriados'));
 
 const Spinner = () => (
   <div
@@ -49,6 +50,7 @@ export default function App() {
         <Route path="clientes"     element={<Clientes />} />
         <Route path="clientes/:id" element={<ClienteDetalhe />} />
         <Route path="metas"        element={<Metas />} />
+        <Route path="feriados"     element={<Feriados />} />
         <Route path="*"            element={<NotFound />} />
       </Route>
     </Routes>
