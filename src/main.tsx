@@ -14,13 +14,15 @@ createRoot(document.getElementById('root')!).render(
         persister,
         maxAge: 24 * 60 * 60 * 1000,
         buster: cacheBuster,
-        // Não persiste o rate-shopper (cache removido): cada visita busca o estado atual.
+        // Não persiste rate-shopper nem a aba de Metas (cache removido): cada visita
+        // busca o estado atual — metas mudam por upload a qualquer hora, fora do ciclo 09:30.
         dehydrateOptions: {
           shouldDehydrateQuery: (q) => {
             const k = String(q.queryKey?.[0] ?? '');
             return q.state.status === 'success' &&
               !k.startsWith('cliente-rate-shopper') &&
-              !k.startsWith('booking-rates');
+              !k.startsWith('booking-rates') &&
+              !k.startsWith('metas-');
           },
         },
       }}

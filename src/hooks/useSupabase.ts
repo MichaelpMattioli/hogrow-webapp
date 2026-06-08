@@ -753,6 +753,10 @@ export function useMetasAnual(ano: number) {
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['metas-anual', ano],
     enabled: !!ano,
+    // Sem cache: metas mudam por upload a qualquer hora — sempre busca fresco.
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnMount: 'always',
     queryFn: async (): Promise<MetaAnualRow[]> => {
       const { data, error } = await supabase.rpc('rpc_metas_anual', { p_ano: ano });
       if (error) throw error;
@@ -806,6 +810,10 @@ export interface MetaUploadLogRow {
 export function useMetasUploadLog() {
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['metas-upload-log'],
+    // Sem cache: o histórico de uploads tem que refletir cada envio na hora.
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnMount: 'always',
     queryFn: async (): Promise<MetaUploadLogRow[]> => {
       const { data, error } = await supabase
         .from('metas_upload_log')
