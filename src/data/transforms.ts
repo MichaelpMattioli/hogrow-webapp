@@ -1,4 +1,4 @@
-import type { HotelRow, ReceitaDiariaRow, KpiDiario, HotelSummary, HotelStatus, PortfolioSummary } from './types';
+import type { HotelRow, ReceitaDiariaRow, KpiDiario, HotelSummary, HotelStatus } from './types';
 
 /** Parse a ReceitaDiariaRow (string numerics) to a KpiDiario (numbers) */
 export function parseKpiRow(row: ReceitaDiariaRow): KpiDiario {
@@ -194,22 +194,6 @@ export function buildHotelSummary(hotel: HotelRow, kpiRows: ReceitaDiariaRow[]):
     latestOcupados: latest?.ocupados ?? 0,
     status: deriveStatus(avgOcc),
   };
-}
-
-/** Build portfolio-level summary */
-export function aggregatePortfolio(hotels: HotelSummary[]): PortfolioSummary {
-  const totalReceita = hotels.reduce((s, h) => s + h.totalReceita, 0);
-  const n = hotels.length;
-  const avgOcc = n > 0 ? parseFloat((hotels.reduce((s, h) => s + h.avgOcc, 0) / n).toFixed(1)) : 0;
-  const avgRevpar = n > 0 ? Math.round(hotels.reduce((s, h) => s + h.avgRevpar, 0) / n) : 0;
-  const dms = hotels.filter(h => h.avgDm !== null);
-  const avgDm = dms.length > 0 ? Math.round(dms.reduce((s, h) => s + (h.avgDm ?? 0), 0) / dms.length) : 0;
-  const totalDias = hotels.reduce((s, h) => s + h.diasComDados, 0);
-
-  const alerts = hotels.filter(h => h.status === 'critical' || h.status === 'warning');
-  const topRevpar = [...hotels].sort((a, b) => b.avgRevpar - a.avgRevpar).slice(0, 3);
-
-  return { totalReceita, avgOcc, avgRevpar, avgDm, totalHotels: n, totalDias, alerts, topRevpar };
 }
 
 /** Generate textual insights from KPI data */

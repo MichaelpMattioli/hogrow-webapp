@@ -1,4 +1,4 @@
-import { LayoutDashboard, Hotel, Search, Bell } from 'lucide-react';
+import { LayoutDashboard, Hotel, Search } from 'lucide-react';
 import { NavLink, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import UserMenu from './UserMenu';
 
@@ -107,19 +107,6 @@ export default function Navbar() {
           </div>
         )}
 
-        <button
-          type="button"
-          aria-label="Notificações"
-          className="relative flex items-center justify-center rounded-full border transition-all duration-150 hover:border-[var(--accent)] hover:text-[var(--accent)]"
-          style={{ width: 34, height: 34, borderColor: 'var(--border)', color: 'var(--text-s)' }}
-        >
-          <Bell size={17} />
-          <span
-            className="absolute rounded-full"
-            aria-hidden="true"
-            style={{ top: 5, right: 6, width: 6, height: 6, background: 'var(--red)', border: '1.5px solid var(--surface)' }}
-          />
-        </button>
         <UserMenu />
       </div>
     </header>

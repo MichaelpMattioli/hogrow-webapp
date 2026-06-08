@@ -159,18 +159,6 @@ export interface HotelSummary {
   status: HotelStatus;
 }
 
-// ─── Portfolio Summary ──────────────────────────────────────────────
-export interface PortfolioSummary {
-  totalReceita: number;
-  avgOcc: number;
-  avgRevpar: number;
-  avgDm: number;
-  totalHotels: number;
-  totalDias: number;
-  alerts: HotelSummary[];
-  topRevpar: HotelSummary[];
-}
-
 // ─── Status Config ──────────────────────────────────────────────────
 export interface StatusConfig {
   label: string;
