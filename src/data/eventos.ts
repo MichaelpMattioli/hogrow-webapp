@@ -79,3 +79,32 @@ export function recorrenciaLabel(r: Recorrencia): string {
   if (r.mes) return oc === 'toda' ? `${base} · ${MES_FULL[r.mes - 1]}` : base.replace(' do mês', ` de ${MES_FULL[r.mes - 1]}`);
   return base;
 }
+
+// Quais eventos (ativos) caem numa data 'YYYY-MM-DD' — expande a recorrência e
+// devolve os nomes. Usado p/ badges em tabelas/calendários (ex.: pick-up diário).
+export function eventosNaData(eventos: Feriado[], dateStr: string): string[] {
+  if (!dateStr) return [];
+  const [y, m, d] = dateStr.split('-').map(Number);
+  if (!y || !m || !d) return [];
+  const wd = new Date(y, m - 1, d).getDay(); // 0=domingo … 6=sábado
+  const names: string[] = [];
+  for (const e of eventos) {
+    if (!e.ativo) continue;
+    const r = e.rec;
+    if (r.tipo === 'unica') {
+      if (r.data === dateStr) names.push(e.nome);
+    } else if (r.tipo === 'anual') {
+      if (r.data && r.data.slice(5) === dateStr.slice(5)) names.push(e.nome); // mesmo dia/mês
+    } else if (r.tipo === 'diaSemana') {
+      const dias = r.dias ?? [];
+      if (!dias.includes(wd)) continue;
+      if (r.mes && r.mes !== m) continue;
+      const oc = r.ocorrencia ?? 'toda';
+      if (oc === 'toda') { names.push(e.nome); continue; }
+      const nth = Math.floor((d - 1) / 7) + 1;            // 1ª..4ª ocorrência do weekday no mês
+      const isLast = d + 7 > new Date(y, m, 0).getDate(); // última do mês?
+      if (oc === -1 ? isLast : oc === nth) names.push(e.nome);
+    }
+  }
+  return names;
+}

@@ -3,6 +3,7 @@ import { CalendarRange, List } from 'lucide-react';
 import type { BookingRate, PickupRow } from '@/data/types';
 import PickupTable from './PickupTable';
 import PickupMensalTable from './PickupMensalTable';
+import { useEventosHotel } from '@/hooks/useEventos';
 
 type PickupView = 'diario' | 'mensal';
 
@@ -36,6 +37,7 @@ export default function PickupSection({
   error = null,
 }: Props) {
   const [view, setView] = useState<PickupView>('diario');
+  const { data: eventos = [] } = useEventosHotel(hotelId);
 
   // Segmented control (Diário | Mensal) — renderizado DENTRO do card de cada visão
   // (antes flutuava solto acima do card).
@@ -88,6 +90,7 @@ export default function PickupSection({
       onPositionChange={onPositionChange}
       onCurrentMonthSelect={onCurrentMonthSelect}
       shopperRates={shopperRates}
+      eventos={eventos}
       loading={loading}
       viewToggle={viewToggle}
     />

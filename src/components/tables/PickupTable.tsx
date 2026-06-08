@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect } from 'react';
-import { CalendarDays, ChevronLeft, ChevronRight, Filter, Hash } from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight, Filter, Hash, Info } from 'lucide-react';
 import type { BookingRate, PickupRow } from '@/data/types';
+import { eventosNaData, type Feriado } from '@/data/eventos';
 import { Skeleton } from '@/components/ui/Skeleton';
 import ExtracaoCalendar from '@/components/ui/ExtracaoCalendar';
 import { stayAxis, extractionAxis, axisPanel, axisLabel } from '@/components/ui/axisPanel';
@@ -89,6 +90,7 @@ interface PickupTableProps {
   onPositionChange?: (date: string) => void;
   onCurrentMonthSelect?: () => void;
   shopperRates: BookingRate[];
+  eventos?: Feriado[];
   loading?: boolean;
   viewToggle?: React.ReactNode;
 }
@@ -150,6 +152,7 @@ export default function PickupTable({
   onPositionChange,
   onCurrentMonthSelect,
   shopperRates,
+  eventos = [],
   loading = false,
   viewToggle,
 }: PickupTableProps) {
@@ -598,12 +601,31 @@ export default function PickupTable({
               const occTt    = parseFloat(r.occ_tt)     || 0;
               const noPickup = r.data_extracao_ant === null;
               const shopperPrices = shopperByDate.get(r.data_referencia) ?? emptyShopperPrices();
+              const feriados = eventosNaData(eventos, r.data_referencia);
 
               return (
                 <tr key={`${r.data_referencia}-${r.data_extracao}`}
                   className="row-hover"
                   style={{ transition:'background 0.1s' }}>
-                  <td style={cell({ fontWeight:600 })}>{fmtRef(r.data_referencia)}</td>
+                  <td style={cell({ fontWeight:600 })}>
+                    <span style={{ display:'inline-flex', alignItems:'center', gap:6 }}>
+                      {fmtRef(r.data_referencia)}
+                      {feriados.length > 0 && (
+                        <span
+                          title={`${feriados.length === 1 ? 'Feriado' : 'Feriados'}: ${feriados.join(' · ')}`}
+                          aria-label={`${feriados.length === 1 ? 'Feriado' : 'Feriados'}: ${feriados.join(', ')}`}
+                          style={{
+                            display:'inline-flex', alignItems:'center', justifyContent:'center',
+                            width:16, height:16, borderRadius:999, flexShrink:0, cursor:'help',
+                            background:'var(--gold-l)', color:'var(--gold)',
+                            border:'1px solid color-mix(in srgb, var(--gold) 30%, transparent)',
+                          }}
+                        >
+                          <Info size={10} />
+                        </span>
+                      )}
+                    </span>
+                  </td>
                   {/* Pick-ups */}
                   {noPickup ? (
                     <td colSpan={5} style={cell({ color:'var(--text-m)', fontSize:10, textAlign:'center', fontStyle:'italic' })}>

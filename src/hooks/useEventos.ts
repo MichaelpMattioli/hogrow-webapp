@@ -53,6 +53,25 @@ export function useHoteisCliente() {
   });
 }
 
+/** Eventos que valem para um hotel (nacional + estadual + municipal + próprio), via RPC. */
+export function useEventosHotel(hotelId: number) {
+  return useQuery({
+    queryKey: ['eventos-hotel', hotelId],
+    enabled: !!hotelId,
+    queryFn: async (): Promise<Feriado[]> => {
+      const { data, error } = await supabase.rpc('rpc_eventos_hotel', { p_hotel_id: hotelId });
+      if (error) throw error;
+      return ((data ?? []) as Record<string, unknown>[]).map(toFeriado);
+    },
+    // Sem cache: a info de feriado no detalhamento é SEMPRE consultada (um feriado
+    // recém-cadastrado/editado precisa refletir na hora). Também fica fora da
+    // persistência em main.tsx (shouldDehydrateQuery exclui 'eventos-hotel').
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnMount: 'always',
+  });
+}
+
 // ─── Escrita (Edge Function `evento-write`, service_role no servidor) ──
 
 async function callWrite(body: Record<string, unknown>) {
