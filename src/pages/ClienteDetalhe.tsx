@@ -273,9 +273,6 @@ export default function ClienteDetalhe() {
   }
 
   const cfg = STATUS_CONFIG[summary.status] ?? STATUS_CONFIG.critical;
-  const latestSnapshot = summary.latestDate !== '-'
-    ? ` - ${summary.latestOcupados}/${summary.uhs} UHs`
-    : ` - ${summary.uhs} UHs`;
   const cardsValueLoading = calendarLoading || cardsLoading || !cards || cards.selectedMesAno !== dataMes || cards.selectedDataExtracao !== dataPosition;
   const cardReferenceMonth = cardsValueLoading ? (dataMes || selectedMes) : cards.selectedMesAno;
   const loadingMeta: MetaData = { value: 1, formatted: '' };
@@ -292,52 +289,67 @@ export default function ClienteDetalhe() {
       </button>
 
       <div
-        className="flex justify-between items-center rounded-[var(--rs)]"
+        className="rounded-[var(--rs)]"
         style={{
           borderLeft: `4px solid ${cfg.color}`,
-          padding: '14px 18px',
+          padding: '18px 18px 20px',
           background: 'var(--surface)',
           marginBottom: 40,
-          gap: 18,
-          flexWrap: 'wrap',
+          position: 'relative',
         }}
       >
-        <div style={{ minWidth: 220 }}>
-          <h2 className="text-xl font-bold" style={{ letterSpacing: '-0.4px' }}>{summary.name}</h2>
-          <p className="text-[13px] mt-0.5" style={{ color: 'var(--text-m)' }}>
-            {summary.city}, {summary.state}{latestSnapshot}
-          </p>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          <div ref={menuRef} style={{ position: 'relative' }}>
-            <button
-              className="flex items-center justify-center rounded-[var(--rx)] transition-colors duration-150 hover:bg-[var(--surface-h)]"
-              style={{ width: 32, height: 32, background: menuOpen ? 'var(--surface-h)' : 'transparent' }}
-              onClick={() => setMenuOpen(o => !o)}
+        {/* Menu (3 pontinhos) — canto superior direito */}
+        <div ref={menuRef} style={{ position: 'absolute', top: 12, right: 12, zIndex: 51 }}>
+          <button
+            className="flex items-center justify-center rounded-[var(--rx)] transition-colors duration-150 hover:bg-[var(--surface-h)]"
+            style={{ width: 32, height: 32, background: menuOpen ? 'var(--surface-h)' : 'transparent' }}
+            onClick={() => setMenuOpen(o => !o)}
+            aria-label="Mais opções do hotel"
+          >
+            <MoreVertical size={16} style={{ color: 'var(--text-m)' }} />
+          </button>
+          {menuOpen && (
+            <div
+              className="rounded-[var(--r)]"
+              style={{
+                position: 'absolute', top: '100%', right: 0, marginTop: 4, zIndex: 50,
+                background: 'var(--surface)', border: '1px solid var(--border)',
+                boxShadow: 'var(--sh-m)', minWidth: 160, padding: '4px 0',
+              }}
             >
-              <MoreVertical size={16} style={{ color: 'var(--text-m)' }} />
-            </button>
-            {menuOpen && (
-              <div
-                className="rounded-[var(--r)]"
-                style={{
-                  position: 'absolute', top: '100%', right: 0, marginTop: 4, zIndex: 50,
-                  background: 'var(--surface)', border: '1px solid var(--border)',
-                  boxShadow: 'var(--sh-m)', minWidth: 160, padding: '4px 0',
-                }}
+              <button
+                className="flex items-center gap-2 w-full text-left text-[12px] font-medium transition-colors duration-100 hover:bg-[var(--surface-h)]"
+                style={{ padding: '7px 14px', color: 'var(--text)' }}
+                onClick={() => { setActiveTab('editar'); setMenuOpen(false); }}
               >
-                <button
-                  className="flex items-center gap-2 w-full text-left text-[12px] font-medium transition-colors duration-100 hover:bg-[var(--surface-h)]"
-                  style={{ padding: '7px 14px', color: 'var(--text)' }}
-                  onClick={() => { setActiveTab('editar'); setMenuOpen(false); }}
-                >
-                  <Pencil size={13} style={{ color: 'var(--text-m)' }} />
-                  Editar Hotel
-                </button>
-              </div>
-            )}
-          </div>
+                <Pencil size={13} style={{ color: 'var(--text-m)' }} />
+                Editar Hotel
+              </button>
+            </div>
+          )}
         </div>
+
+        {/* Nome do hotel — centralizado e em destaque */}
+        <h2 style={{ textAlign: 'center', fontSize: 26, fontWeight: 800, letterSpacing: '-0.5px', lineHeight: 1.15, padding: '2px 44px' }}>
+          {summary.name}
+        </h2>
+
+        {/* Seletor de período (mês + extração + faixa) — só no dashboard */}
+        {activeTab === 'dashboard' && calendarMonth && (
+          <div style={{ marginTop: 18 }}>
+            <PeriodSelector
+              selectedMonth={calendarMonth}
+              availableMonths={availableMonths}
+              onSelect={month => handleMesesChange([month])}
+              selectedPosition={calendarPosition}
+              availablePositionDates={availablePositionDates}
+              onPositionSelect={handlePositionSelect}
+              onCurrentMonthSelect={handleCurrentMonthSelect}
+              dayRange={dayRange}
+              onDayRangeChange={setDayRange}
+            />
+          </div>
+        )}
       </div>
 
       {activeTab === 'editar' ? (
@@ -354,21 +366,6 @@ export default function ClienteDetalhe() {
         </>
       ) : (
         <>
-          {calendarMonth && (
-            <div style={{ marginBottom: 20 }}>
-              <PeriodSelector
-                selectedMonth={calendarMonth}
-                availableMonths={availableMonths}
-                onSelect={month => handleMesesChange([month])}
-                selectedPosition={calendarPosition}
-                availablePositionDates={availablePositionDates}
-                onPositionSelect={handlePositionSelect}
-                onCurrentMonthSelect={handleCurrentMonthSelect}
-                dayRange={dayRange}
-                onDayRangeChange={setDayRange}
-              />
-            </div>
-          )}
           {cardsError ? (
             <div style={{ padding: 24, marginBottom: 24, textAlign: 'center', color: 'var(--red)', fontSize: 12, fontWeight: 700 }}>
               {cardsError}
