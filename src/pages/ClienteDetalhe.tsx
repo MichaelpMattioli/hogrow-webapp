@@ -18,7 +18,7 @@ import type { PerfData, MetaData } from '@/components/cards/PerformanceCard';
 import PickupSection from '@/components/tables/PickupSection';
 import HotelEditForm from '@/components/forms/HotelEditForm';
 import RateCalendar from '@/components/rateshop/RateCalendar';
-import HeaderMonthReference, { type DayRange } from '@/components/ui/HeaderMonthReference';
+import PeriodSelector, { type DayRange } from '@/components/ui/PeriodSelector';
 import { Skeleton, SkeletonText } from '@/components/ui/Skeleton';
 
 type Tab = 'dashboard' | 'editar';
@@ -309,20 +309,6 @@ export default function ClienteDetalhe() {
           </p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          {calendarMonth && (
-            <HeaderMonthReference
-              selectedMonth={calendarMonth}
-              availableMonths={availableMonths}
-              onSelect={month => handleMesesChange([month])}
-              selectedPosition={calendarPosition}
-              availablePositionDates={availablePositionDates}
-              onPositionSelect={handlePositionSelect}
-              onCurrentMonthSelect={handleCurrentMonthSelect}
-              dayRange={dayRange}
-              onDayRangeChange={setDayRange}
-            />
-          )}
-
           <div ref={menuRef} style={{ position: 'relative' }}>
             <button
               className="flex items-center justify-center rounded-[var(--rx)] transition-colors duration-150 hover:bg-[var(--surface-h)]"
@@ -368,6 +354,21 @@ export default function ClienteDetalhe() {
         </>
       ) : (
         <>
+          {calendarMonth && (
+            <div style={{ marginBottom: 20 }}>
+              <PeriodSelector
+                selectedMonth={calendarMonth}
+                availableMonths={availableMonths}
+                onSelect={month => handleMesesChange([month])}
+                selectedPosition={calendarPosition}
+                availablePositionDates={availablePositionDates}
+                onPositionSelect={handlePositionSelect}
+                onCurrentMonthSelect={handleCurrentMonthSelect}
+                dayRange={dayRange}
+                onDayRangeChange={setDayRange}
+              />
+            </div>
+          )}
           {cardsError ? (
             <div style={{ padding: 24, marginBottom: 24, textAlign: 'center', color: 'var(--red)', fontSize: 12, fontWeight: 700 }}>
               {cardsError}

@@ -5,7 +5,7 @@ import { ChevronUp, ChevronDown, TrendingUp, TrendingDown, Minus, ChevronsUpDown
 import type { HotelSummary, HotelMeta } from '@/data/types';
 import { STATUS_CONFIG } from '@/lib/utils';
 import { deriveStatus } from '@/data/transforms';
-import HeaderMonthReference, { type DayRange } from '@/components/ui/HeaderMonthReference';
+import PeriodSelector, { type DayRange } from '@/components/ui/PeriodSelector';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -813,20 +813,6 @@ export default function Clientes() {
           </p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          {calendarMonth && (
-            <HeaderMonthReference
-              selectedMonth={calendarMonth}
-              availableMonths={availableMonths}
-              onSelect={handleReferenceMonthSelect}
-              selectedPosition={calendarPosition}
-              availablePositionDates={availablePositionDates}
-              onPositionSelect={handlePositionSelect}
-              onCurrentMonthSelect={handleCurrentMonthSelect}
-              dayRange={dayRange}
-              onDayRangeChange={setDayRange}
-            />
-          )}
-
           {/* Full / abbreviated toggle */}
           <button
             onClick={() => setFull(f => !f)}
@@ -850,6 +836,22 @@ export default function Clientes() {
 
         </div>
       </div>
+
+      {calendarMonth && (
+        <div style={{ marginBottom: 20 }}>
+          <PeriodSelector
+            selectedMonth={calendarMonth}
+            availableMonths={availableMonths}
+            onSelect={handleReferenceMonthSelect}
+            selectedPosition={calendarPosition}
+            availablePositionDates={availablePositionDates}
+            onPositionSelect={handlePositionSelect}
+            onCurrentMonthSelect={handleCurrentMonthSelect}
+            dayRange={dayRange}
+            onDayRangeChange={setDayRange}
+          />
+        </div>
+      )}
 
       {dayRange && (
         <div style={{
