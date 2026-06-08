@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { AlertCircle, AlertTriangle, Check, Download, FileSpreadsheet, Loader2, Upload } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import type { MetaAnualRow, MetaUploadIssue } from '@/hooks/useSupabase';
+import type { MetaAnualRow, MetaUploadIssueGroup } from '@/hooks/useSupabase';
 import MetasModal, { IssueList } from './MetasModal';
 
 const MES_ABBR = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
@@ -19,7 +19,7 @@ const TONE: Record<Level, { bg: string; color: string; border: string; Icon: typ
 };
 
 interface Diff { criadas: number; substituidas: number; mantidas: number; inalteradas: number; aplicar: number; ignored: number; hoteisAusentes: number; hoteisValidos: number; metasTotal: number }
-interface PreviewState { name: string; base64: string; status: Level; diff: Diff; issues: MetaUploadIssue[] }
+interface PreviewState { name: string; base64: string; status: Level; diff: Diff; issues: MetaUploadIssueGroup[] }
 
 async function downloadTemplate(rows: MetaAnualRow[], ano: number) {
   const XLSX = await import('xlsx');
@@ -83,7 +83,7 @@ export default function MetasExcelCard({ ano, rows, onDone }: { ano: number; row
         body: { ano, filename: file.name, fileBase64: base64, modo: 'preview' },
       });
       if (error) throw error;
-      const d = (data ?? {}) as { status?: Level; diff?: Diff; issues?: MetaUploadIssue[] };
+      const d = (data ?? {}) as { status?: Level; diff?: Diff; issues?: MetaUploadIssueGroup[] };
       setPreview({
         name: file.name, base64,
         status: d.status ?? 'ok',
@@ -107,12 +107,12 @@ export default function MetasExcelCard({ ano, rows, onDone }: { ano: number; row
         body: { ano, filename: preview.name, fileBase64: preview.base64, modo: 'apply' },
       });
       if (error) throw error;
-      const d = (data ?? {}) as { status?: Level; upserted?: number; ignored?: number; versionado?: boolean; issues?: MetaUploadIssue[] };
+      const d = (data ?? {}) as { status?: Level; upserted?: number; ignored?: number; versionado?: boolean; issues?: MetaUploadIssueGroup[] };
       const status: Level = d.status ?? 'ok';
       const issues = d.issues ?? [];
-      const alertas = issues.filter(i => i.level === 'alerta').length;
+      const alertas = issues.filter(g => g.level === 'alerta').reduce((s, g) => s + g.count, 0);
       if (status === 'erro') {
-        setResult({ level: 'erro', msg: issues.find(i => i.level === 'erro')?.msg ?? 'Não foi possível aplicar.' });
+        setResult({ level: 'erro', msg: issues.find(g => g.level === 'erro')?.items[0]?.msg ?? 'Não foi possível aplicar.' });
       } else if (status === 'parcial') {
         setResult({ level: 'parcial', msg: `${d.upserted ?? 0} aplicadas · ${d.ignored ?? 0} ignoradas${alertas ? ` · ${alertas} aviso(s)` : ''}.` });
       } else {

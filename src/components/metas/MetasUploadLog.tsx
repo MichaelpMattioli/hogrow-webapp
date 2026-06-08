@@ -21,9 +21,9 @@ function fmtDateTime(iso: string): string {
 // Mensagem amigável da coluna "Observação", a partir das issues estruturadas (Fase 1+).
 // O detalhamento completo das issues num modal vem na Fase 4 (ver docs/metas-upload-validacao.md).
 function observacao(r: MetaUploadLogRow): string {
-  // Defensivo: linhas vindas do cache persistido (anteriores à coluna issues) podem não ter o campo.
-  const firstErro = (r.issues ?? []).find(i => i.level === 'erro');
-  if (firstErro) return firstErro.msg;
+  // r.issues já vem agregado por tipo (grupos); cada grupo tem uma amostra em `items`.
+  const firstErro = (r.issues ?? []).find(g => g.level === 'erro');
+  if (firstErro) return firstErro.items[0]?.msg ?? firstErro.code;
   const parts: string[] = [];
   if ((r.alertas ?? 0) > 0) parts.push(`${r.alertas} alerta(s)`);
   if (r.ignored > 0) parts.push(`${r.ignored} ignorada(s)`);

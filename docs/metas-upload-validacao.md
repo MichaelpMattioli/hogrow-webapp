@@ -90,21 +90,27 @@ alter table public.metas_upload_log
     check (modo in ('apply','preview'));
 ```
 
-Forma de cada issue:
+As issues são **AGREGADAS POR CÓDIGO na origem** (na função), não uma lista plana — assim nenhum tipo
+é descartado e a **contagem é real** (sem cap global truncando/escondendo tipos). Cada elemento de
+`issues` é um GRUPO:
 ```jsonc
 {
   "level": "erro" | "alerta" | "info",
   "code":  "E-ROW-02",
-  "msg":   "Hotel 99999 não existe",
-  "hotelId": 99999,          // opcional
-  "hotelNome": "…",          // opcional
-  "mes": 7,                   // opcional (1..12)
-  "cat": "receita"            // opcional (receita|occ|dm)
+  "count": 100,                // total REAL de ocorrências desse tipo (ilimitado)
+  "items": [                   // AMOSTRA (até 50) com os detalhes de cada ocorrência
+    { "msg": "Hotel 90000 não existe", "hotelId": 90000 },
+    { "msg": "Hotel 90001 não existe", "hotelId": 90001 }
+    // …
+  ]
 }
 ```
+Cada item da amostra tem `msg` + campos opcionais `hotelId` / `hotelNome` / `mes` (1..12) /
+`cat` (receita|occ|dm). O front renderiza 1 linha por grupo com a `count` + um resumo condensado do
+"onde" (a partir da amostra), expansível. Linhas de log antigas (formato plano) são agregadas no front
+(`toIssueGroups`) — compatível.
 
-A coluna **Observação** passa a renderizar: `{erros} erro(s) · {alertas} alerta(s)` (clicável → modal
-com a lista). Hoje ela mostra texto genérico; com isso vira detalhada.
+A coluna **Observação** mostra a 1ª mensagem de erro (ou resumo de alertas); o **modal** lista os grupos.
 
 ---
 

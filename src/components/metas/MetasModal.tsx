@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertCircle, AlertTriangle, ChevronRight, Info, X } from 'lucide-react';
-import type { MetaUploadIssue } from '@/hooks/useSupabase';
+import type { MetaUploadIssue, MetaUploadIssueGroup } from '@/hooks/useSupabase';
 
 // Modal em portal no body — ancestrais com transform (.fade-in/.card-in) quebram position:fixed.
 export default function MetasModal({
@@ -76,8 +76,8 @@ function monthRange(months: number[]): string {
   return u.slice(0, 4).map(m => MES_AB[m - 1]).join(', ') + (u.length > 4 ? '…' : '');
 }
 
-// Resumo condensado do "onde", sem listar cada repetição.
-function whereSummary(items: MetaUploadIssue[]): string {
+// Resumo condensado do "onde", sem listar cada repetição. `count` = total real do grupo.
+function whereSummary(items: MetaUploadIssue[], count: number): string {
   if (items.some(i => i.mes != null)) {
     const byHC = new Map<string, { nome: string; cat?: string; meses: number[] }>();
     for (const i of items) {
@@ -91,34 +91,28 @@ function whereSummary(items: MetaUploadIssue[]): string {
     return parts.join('   ·   ') + (byHC.size > 3 ? `   … +${byHC.size - 3}` : '');
   }
   const ids = [...new Set(items.map(i => i.hotelId).filter((x): x is number => x != null))];
-  if (ids.length) return ids.slice(0, 4).join(' · ') + (ids.length > 4 ? ` … +${ids.length - 4}` : '');
+  if (ids.length) {
+    const shown = ids.slice(0, 4);
+    const rest = count - shown.length; // remainder pelo total real, não pela amostra
+    return shown.join(' · ') + (rest > 0 ? ` … +${rest}` : '');
+  }
   return items[0]?.msg ?? '';
 }
 
-interface Group { level: MetaUploadIssue['level']; code: string; items: MetaUploadIssue[] }
-function groupByCode(issues: MetaUploadIssue[]): Group[] {
-  const m = new Map<string, Group>();
-  for (const i of issues) {
-    if (!m.has(i.code)) m.set(i.code, { level: i.level, code: i.code, items: [] });
-    m.get(i.code)!.items.push(i);
-  }
-  return [...m.values()].sort((a, b) => ORDER[a.level] - ORDER[b.level] || b.items.length - a.items.length);
-}
-
-// Lista de observações agrupada por TIPO (código), com contagem + expandir.
-// Colapsa a repetição (ex.: 40× "Hotel 900XX não existe" → 1 linha "Hotel inexistente · 40").
-export function IssueList({ issues }: { issues: MetaUploadIssue[] }) {
+// Lista de observações já AGREGADA por tipo (código), com contagem + expandir.
+// Colapsa a repetição (ex.: 100× "Hotel 900XX não existe" → 1 linha "Hotel inexistente · 100").
+export function IssueList({ issues }: { issues: MetaUploadIssueGroup[] }) {
   const [open, setOpen] = useState<Record<string, boolean>>({});
   if (!issues || issues.length === 0) {
     return <div style={{ padding: 16, textAlign: 'center', color: 'var(--text-m)', fontSize: 13, fontWeight: 600 }}>Nenhuma observação registrada.</div>;
   }
-  const groups = groupByCode(issues);
+  const groups = [...issues].sort((a, b) => ORDER[a.level] - ORDER[b.level] || b.count - a.count);
   const counts = { erro: 0, alerta: 0, info: 0 };
-  issues.forEach(i => { counts[i.level]++; });
+  groups.forEach(g => { counts[g.level] += g.count; });
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      {/* Resumo por nível */}
+      {/* Resumo por nível (contagem real) */}
       <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 2 }}>
         {(['erro', 'alerta', 'info'] as const).filter(l => counts[l] > 0).map(l => {
           const lv = LV[l];
@@ -133,20 +127,22 @@ export function IssueList({ issues }: { issues: MetaUploadIssue[] }) {
 
       {groups.map(g => {
         const lv = LV[g.level];
-        const n = g.items.length;
-        // Grupo de 1 item: mostra a mensagem direta (sem contagem/expandir).
+        const n = g.count;
+        // Grupo de 1 ocorrência: mostra a mensagem direta (sem contagem/expandir).
         if (n === 1) {
           return (
             <div key={g.code} style={{ display: 'flex', gap: 9, padding: '9px 11px', borderRadius: 'var(--rx)', background: lv.bg, border: '1px solid var(--border-l)' }}>
               <lv.Icon size={15} style={{ color: lv.color, flexShrink: 0, marginTop: 2 }} />
               <div style={{ minWidth: 0 }}>
                 <span style={{ fontSize: 9.5, fontWeight: 800, color: lv.color, letterSpacing: '0.04em', fontFamily: 'var(--mono)' }}>{g.code}</span>
-                <div style={{ fontSize: 12.5, color: 'var(--text)', fontWeight: 600, lineHeight: 1.35 }}>{g.items[0].msg}</div>
+                <div style={{ fontSize: 12.5, color: 'var(--text)', fontWeight: 600, lineHeight: 1.35 }}>{g.items[0]?.msg ?? CODE_LABEL[g.code] ?? g.code}</div>
               </div>
             </div>
           );
         }
         const isOpen = !!open[g.code];
+        const shownItems = g.items.length;       // amostra disponível
+        const rest = n - shownItems;             // quantos além da amostra
         return (
           <div key={g.code} style={{ borderRadius: 'var(--rx)', background: lv.bg, border: '1px solid var(--border-l)', overflow: 'hidden' }}>
             <button
@@ -164,14 +160,14 @@ export function IssueList({ issues }: { issues: MetaUploadIssue[] }) {
             </button>
             {!isOpen ? (
               <div style={{ padding: '0 11px 9px 35px', fontSize: 11.5, color: 'var(--text-m)', fontWeight: 600, lineHeight: 1.4, wordBreak: 'break-word' }}>
-                {whereSummary(g.items)}
+                {whereSummary(g.items, n)}
               </div>
             ) : (
               <div style={{ padding: '0 11px 9px 35px', display: 'flex', flexDirection: 'column', gap: 3 }}>
-                {g.items.slice(0, 60).map((it, ix) => (
+                {g.items.map((it, ix) => (
                   <div key={ix} style={{ fontSize: 11.5, color: 'var(--text)', fontWeight: 550, lineHeight: 1.4, wordBreak: 'break-word' }}>· {it.msg}</div>
                 ))}
-                {n > 60 && <div style={{ fontSize: 11.5, color: 'var(--text-m)', fontWeight: 700 }}>… e mais {n - 60}</div>}
+                {rest > 0 && <div style={{ fontSize: 11.5, color: 'var(--text-m)', fontWeight: 700 }}>… e mais {rest} (amostra de {shownItems})</div>}
               </div>
             )}
           </div>

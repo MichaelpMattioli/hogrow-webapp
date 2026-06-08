@@ -790,6 +790,33 @@ export interface MetaUploadIssue {
   cat?: string;
 }
 
+// A função agrega por código: cada grupo guarda a CONTAGEM real + uma amostra (items).
+export interface MetaUploadIssueGroup {
+  level: 'erro' | 'alerta' | 'info';
+  code: string;
+  count: number;
+  items: MetaUploadIssue[];
+}
+
+const ISSUE_ORDER: Record<string, number> = { erro: 0, alerta: 1, info: 2 };
+
+// Normaliza o campo `issues`: linhas novas já vêm agrupadas; linhas antigas (planas) são agrupadas aqui.
+export function toIssueGroups(raw: unknown): MetaUploadIssueGroup[] {
+  if (!Array.isArray(raw) || raw.length === 0) return [];
+  const first = raw[0] as Record<string, unknown>;
+  if (first && typeof first === 'object' && 'count' in first && 'items' in first) {
+    return raw as MetaUploadIssueGroup[];
+  }
+  const m = new Map<string, MetaUploadIssueGroup>();
+  for (const i of raw as MetaUploadIssue[]) {
+    let g = m.get(i.code);
+    if (!g) { g = { level: i.level, code: i.code, count: 0, items: [] }; m.set(i.code, g); }
+    g.count++;
+    if (g.items.length < 50) g.items.push(i);
+  }
+  return [...m.values()].sort((a, b) => (ISSUE_ORDER[a.level] - ISSUE_ORDER[b.level]) || (b.count - a.count));
+}
+
 export interface MetaUploadLogRow {
   id: string;
   createdAt: string;
@@ -804,7 +831,7 @@ export interface MetaUploadLogRow {
   storagePath: string | null;
   erros: number;
   alertas: number;
-  issues: MetaUploadIssue[];
+  issues: MetaUploadIssueGroup[];
 }
 
 export function useMetasUploadLog() {
@@ -835,7 +862,7 @@ export function useMetasUploadLog() {
         storagePath: (r.storage_path as string | null) ?? null,
         erros: num(r.erros),
         alertas: num(r.alertas),
-        issues: Array.isArray(r.issues) ? (r.issues as MetaUploadIssue[]) : [],
+        issues: toIssueGroups(r.issues),
       }));
     },
   });
