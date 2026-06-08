@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import MetasModal from '@/components/metas/MetasModal';
 import {
-  buildMockFeriados, chipData, DOW_SHORT, HOTEIS, isRecorrente, MES_FULL, recorrenciaLabel,
+  buildMockFeriados, chipData, DOW_SHORT, HOTEIS, isRecorrente, MES_FULL, OCORRENCIAS, recorrenciaLabel,
   type Abrangencia, type Feriado, type RecTipo, type Recorrencia,
 } from '@/data/feriadosMock';
 
@@ -97,10 +97,7 @@ function Expander({ open, onToggle, icon, title, sub, badges, onAdd, children }:
 // ─── modal add/editar com seletor de recorrência (estilo Teams) ───
 const TIPOS: { id: RecTipo; label: string }[] = [
   { id: 'unica', label: 'Data única' }, { id: 'anual', label: 'Anual' },
-  { id: 'semanal', label: 'Semanal' }, { id: 'mensal', label: 'Mensal' },
-];
-const ORDINAIS: { v: 1 | 2 | 3 | 4 | -1; l: string }[] = [
-  { v: 1, l: '1ª' }, { v: 2, l: '2ª' }, { v: 3, l: '3ª' }, { v: 4, l: '4ª' }, { v: -1, l: 'Última' },
+  { id: 'diaSemana', label: 'Dia da semana' },
 ];
 
 function FeriadoForm({ feriado, scope, ano, onSave, onClose }: {
@@ -113,17 +110,16 @@ function FeriadoForm({ feriado, scope, ano, onSave, onClose }: {
   const setTipo = (t: RecTipo) => setRec(
     t === 'unica' ? { tipo: 'unica', data: rec.data ?? `${ano}-01-01` }
       : t === 'anual' ? { tipo: 'anual', data: rec.data ?? `${ano}-01-01` }
-        : t === 'semanal' ? { tipo: 'semanal', diasSemana: rec.diasSemana ?? [6], mes: rec.mes ?? null }
-          : { tipo: 'mensal', semana: rec.semana ?? -1, diaSemana: rec.diaSemana ?? 0, mes: rec.mes ?? null });
+        : { tipo: 'diaSemana', dias: rec.dias ?? [6], ocorrencia: rec.ocorrencia ?? 'toda', mes: rec.mes ?? null });
 
   const valido = nome.trim().length > 0 && (
-    (rec.tipo === 'unica' || rec.tipo === 'anual') ? !!rec.data
-      : rec.tipo === 'semanal' ? (rec.diasSemana?.length ?? 0) > 0 : true);
+    (rec.tipo === 'unica' || rec.tipo === 'anual') ? !!rec.data : (rec.dias?.length ?? 0) > 0);
 
   const fld: React.CSSProperties = { width: '100%', height: 40, padding: '0 12px', borderRadius: 'var(--rx)', border: '1px solid var(--border)', background: 'var(--bg)', fontSize: 13, color: 'var(--text)', fontFamily: 'var(--font)' };
   const lab: React.CSSProperties = { display: 'block', fontSize: 11, fontWeight: 800, color: 'var(--text-m)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 7 };
-  const chip = (active: boolean): React.CSSProperties => ({ height: 32, padding: '0 11px', borderRadius: 'var(--rx)', border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`, background: active ? 'var(--accent)' : 'var(--surface)', color: active ? '#fff' : 'var(--text-s)', fontSize: 12, fontWeight: 800, cursor: 'pointer' });
-  const dayChip = (active: boolean): React.CSSProperties => ({ width: 38, height: 34, borderRadius: 'var(--rx)', border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`, background: active ? 'var(--accent)' : 'var(--surface)', color: active ? '#fff' : 'var(--text-s)', fontSize: 11.5, fontWeight: 800, cursor: 'pointer' });
+  const subLab: React.CSSProperties = { display: 'block', fontSize: 11.5, fontWeight: 750, color: 'var(--text-s)', marginBottom: 8 };
+  const chip = (active: boolean): React.CSSProperties => ({ height: 32, padding: '0 12px', borderRadius: 'var(--rx)', border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`, background: active ? 'var(--accent)' : 'var(--surface)', color: active ? '#fff' : 'var(--text-s)', fontSize: 12, fontWeight: 800, cursor: 'pointer' });
+  const dayChip = (active: boolean): React.CSSProperties => ({ flex: 1, minWidth: 0, height: 44, borderRadius: 'var(--rx)', border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`, background: active ? 'var(--accent)' : 'var(--surface)', color: active ? '#fff' : 'var(--text-s)', fontSize: 12, fontWeight: 800, cursor: 'pointer', transition: 'all .1s' });
 
   const mesSelect = (
     <select value={rec.mes ?? ''} onChange={e => setRec(r => ({ ...r, mes: e.target.value ? Number(e.target.value) : null }))} style={{ ...fld, height: 36 }}>
@@ -162,27 +158,28 @@ function FeriadoForm({ feriado, scope, ano, onSave, onClose }: {
             </div>
           )}
 
-          {rec.tipo === 'semanal' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div style={{ display: 'flex', gap: 5 }}>
-                {DOW_SHORT.map((d, i) => {
-                  const on = (rec.diasSemana ?? []).includes(i);
-                  return <button key={d} type="button" style={dayChip(on)} onClick={() => setRec(r => ({ ...r, diasSemana: on ? (r.diasSemana ?? []).filter(x => x !== i) : [...(r.diasSemana ?? []), i] }))}>{d}</button>;
-                })}
+          {rec.tipo === 'diaSemana' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div>
+                <span style={subLab}>1. Selecione o(s) dia(s) da semana</span>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {DOW_SHORT.map((d, i) => {
+                    const on = (rec.dias ?? []).includes(i);
+                    return <button key={d} type="button" aria-pressed={on} style={dayChip(on)}
+                      onClick={() => setRec(r => ({ ...r, dias: on ? (r.dias ?? []).filter(x => x !== i) : [...(r.dias ?? []), i] }))}>{d}</button>;
+                  })}
+                </div>
               </div>
-              {mesSelect}
-            </div>
-          )}
-
-          {rec.tipo === 'mensal' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                {ORDINAIS.map(o => <button key={o.v} type="button" style={chip(rec.semana === o.v)} onClick={() => setRec(r => ({ ...r, semana: o.v }))}>{o.l}</button>)}
+              <div>
+                <span style={subLab}>2. Com que frequência?</span>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {OCORRENCIAS.map(o => <button key={String(o.v)} type="button" style={chip(rec.ocorrencia === o.v)} onClick={() => setRec(r => ({ ...r, ocorrencia: o.v }))}>{o.curto}</button>)}
+                </div>
               </div>
-              <div style={{ display: 'flex', gap: 5 }}>
-                {DOW_SHORT.map((d, i) => <button key={d} type="button" style={dayChip(rec.diaSemana === i)} onClick={() => setRec(r => ({ ...r, diaSemana: i }))}>{d}</button>)}
+              <div>
+                <span style={subLab}>3. Em qual mês? (opcional)</span>
+                {mesSelect}
               </div>
-              {mesSelect}
             </div>
           )}
         </div>
