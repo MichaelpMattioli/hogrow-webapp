@@ -49,7 +49,8 @@ export default function PickupSection({
   });
   const viewToggle = (
     <div role="tablist" aria-label="Visão do pick-up" style={{
-      display: 'inline-flex', gap: 3, padding: 3, borderRadius: 8,
+      display: 'inline-flex', alignSelf: 'flex-start', flex: '0 0 auto', width: 'fit-content',
+      gap: 3, padding: 3, borderRadius: 8,
       background: 'var(--surface-2)', border: '1px solid var(--border-l)',
     }}>
       <button type="button" role="tab" aria-selected={view === 'diario'} style={segBtn(view === 'diario')} onClick={() => setView('diario')}>
