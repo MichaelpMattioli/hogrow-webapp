@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { CalendarDays, ChevronDown, Target } from 'lucide-react';
+import { Building2, CalendarDays, ChevronDown, Target } from 'lucide-react';
 
 const ITEMS = [
+  { to: '/cadastro', label: 'Cadastro de Clientes', desc: 'Hotéis, status e concorrentes', Icon: Building2 },
   { to: '/metas', label: 'Metas', desc: 'Receita, ocupação e diária por hotel', Icon: Target },
   { to: '/feriados', label: 'Eventos e Feriados', desc: 'Feriados e datas comemorativas', Icon: CalendarDays },
 ];

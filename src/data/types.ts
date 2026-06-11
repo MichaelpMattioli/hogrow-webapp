@@ -11,9 +11,11 @@ export interface HotelRow {
   nome_fantasia: string;
   cidade: string | null;
   estado: string | null;
+  uf: string | null;          // código de 2 letras (ex. "PA")
   total_uhs: number;
   total_leitos: number | null;
   cadastur: string | null;
+  pms: string | null;         // pipeline de origem (HITS/ENGENHO/DESBRAVADOR/…)
   ativo: boolean;
   created_at: string;
   updated_at: string;
