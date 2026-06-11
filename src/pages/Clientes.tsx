@@ -895,9 +895,9 @@ export default function Clientes() {
           overflow: 'hidden',
           boxShadow: 'var(--sh)',
         }}>
-          <div style={{ overflowX: 'auto' }}>
+          <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 120px)' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-              <thead>
+              <thead style={{ position: 'sticky', top: 0, zIndex: 3 }}>
                 {/* ── Group labels ── */}
                 <tr style={{ background: 'var(--bg)' }}>
                   <td colSpan={2} style={{ padding: '6px 14px', borderBottom: '1px solid var(--border-l)' }} />

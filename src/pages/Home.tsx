@@ -199,9 +199,9 @@ export default function Home() {
           </div>
         </div>
 
-        <div style={{ overflowX: 'auto' }}>
+        <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 130px)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-            <thead>
+            <thead style={{ position: 'sticky', top: 0, zIndex: 3 }}>
               <tr>
                 <SortHeader label="Hotel" col="nome" align="left" {...shProps} />
                 <SortHeader label="Receita" sub="mês atual" col="receita" {...shProps} />
