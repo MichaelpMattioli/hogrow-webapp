@@ -1,10 +1,12 @@
-import { Routes, Route, Outlet, useLocation } from 'react-router-dom';
+import { Routes, Route, Outlet, Navigate, useLocation } from 'react-router-dom';
 import { Suspense, lazy } from 'react';
 import { Loader2 } from 'lucide-react';
 import Navbar from '@/components/layout/Navbar';
 import PageContainer from '@/components/layout/PageContainer';
 import ErrorBoundary from '@/components/layout/ErrorBoundary';
 import NotFound from '@/pages/NotFound';
+import Login from '@/pages/Login';
+import { useAuth } from '@/lib/auth';
 
 const Home           = lazy(() => import('@/pages/Home'));
 const Clientes       = lazy(() => import('@/pages/Clientes'));
@@ -44,9 +46,15 @@ function Layout() {
 }
 
 export default function App() {
+  const { user } = useAuth();
+
   return (
     <Routes>
-      <Route element={<Layout />}>
+      {/* Login (público): se já autenticado, manda pra Home */}
+      <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
+
+      {/* Rotas protegidas: sem sessão → /login */}
+      <Route element={user ? <Layout /> : <Navigate to="/login" replace />}>
         <Route index               element={<Home />} />
         <Route path="clientes"     element={<Clientes />} />
         <Route path="clientes/:id" element={<ClienteDetalhe />} />

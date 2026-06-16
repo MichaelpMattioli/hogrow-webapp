@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client'
 import { queryClient, persister, cacheBuster } from '@/lib/queryClient'
+import { AuthProvider } from '@/lib/auth'
 import App from './App'
 import './index.css'
 
@@ -30,7 +31,9 @@ createRoot(document.getElementById('root')!).render(
       }}
     >
       <BrowserRouter>
-        <App />
+        <AuthProvider>
+          <App />
+        </AuthProvider>
       </BrowserRouter>
     </PersistQueryClientProvider>
   </StrictMode>,

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { Building2, CalendarDays, ChevronDown, Target } from 'lucide-react';
+import { Building2, CalendarDays, ChevronDown, LogOut, Target } from 'lucide-react';
+import { useAuth } from '@/lib/auth';
 
 const ITEMS = [
   { to: '/cadastro', label: 'Cadastro de Clientes', desc: 'Hotéis, status e concorrentes', Icon: Building2 },
@@ -12,6 +13,9 @@ const ITEMS = [
 export default function UserMenu() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const { user, logout } = useAuth();
+  const displayName = user ? user.charAt(0).toUpperCase() + user.slice(1) : 'Conta';
+  const initials = (user ?? 'HG').slice(0, 2).toUpperCase();
 
   useEffect(() => {
     if (!open) return;
@@ -33,7 +37,7 @@ export default function UserMenu() {
         className="flex items-center cursor-pointer"
         style={{ gap: 5, padding: 2, paddingRight: 4, borderRadius: 999, border: `1px solid ${open ? 'var(--accent)' : 'var(--border)'}`, background: open ? 'var(--accent-l)' : 'var(--surface)', transition: 'all .12s' }}
       >
-        <span className="flex items-center justify-center rounded-full text-[11px] font-semibold text-white" style={{ width: 30, height: 30, background: 'linear-gradient(135deg, #1D2C5C, #FFAA01)' }}>VA</span>
+        <span className="flex items-center justify-center rounded-full text-[11px] font-semibold text-white" style={{ width: 30, height: 30, background: 'linear-gradient(135deg, #1D2C5C, #FFAA01)' }}>{initials}</span>
         <ChevronDown size={14} style={{ color: 'var(--text-m)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .12s' }} />
       </button>
 
@@ -49,9 +53,9 @@ export default function UserMenu() {
         >
           {/* Cabeçalho da conta */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderBottom: '1px solid var(--border-l)' }}>
-            <span className="flex items-center justify-center rounded-full text-[12px] font-bold text-white" style={{ width: 36, height: 36, flexShrink: 0, background: 'linear-gradient(135deg, #1D2C5C, #FFAA01)' }}>VA</span>
+            <span className="flex items-center justify-center rounded-full text-[12px] font-bold text-white" style={{ width: 36, height: 36, flexShrink: 0, background: 'linear-gradient(135deg, #1D2C5C, #FFAA01)' }}>{initials}</span>
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', lineHeight: 1.2 }}>Administrador</div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', lineHeight: 1.2 }}>{displayName}</div>
               <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-m)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>HoGrow · Revenue Intelligence</div>
             </div>
           </div>
@@ -84,6 +88,21 @@ export default function UserMenu() {
                 )}
               </NavLink>
             ))}
+          </div>
+
+          {/* Sair */}
+          <div style={{ borderTop: '1px solid var(--border-l)', padding: 6 }}>
+            <button
+              type="button" role="menuitem"
+              onClick={() => { setOpen(false); logout(); }}
+              className="hg-menu-item"
+              style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 11, padding: '9px 10px', borderRadius: 'var(--rx)', border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left' }}
+            >
+              <span style={{ width: 32, height: 32, flexShrink: 0, borderRadius: 'var(--rx)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--red-l)', color: 'var(--red)' }}>
+                <LogOut size={15} />
+              </span>
+              <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>Sair da conta</span>
+            </button>
           </div>
         </div>
       )}
