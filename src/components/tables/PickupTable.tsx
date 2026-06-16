@@ -62,7 +62,13 @@ function fmtReferencePeriod(months: string[]) {
 }
 
 function rateScrapeDate(rate: BookingRate) {
-  return rate.scrapedAt.slice(0, 10);
+  // scraped_at é timestamptz em UTC; o "dia da coleta" relevante é em BRT (UTC-3,
+  // sem horário de verão no Brasil desde 2019) — é assim que a data_extracao do
+  // pickup é gravada. Sem ajustar, coletas após 21h BRT caem no dia UTC seguinte
+  // e nunca alinham com a extração do pickup.
+  const t = Date.parse(rate.scrapedAt);
+  if (Number.isNaN(t)) return rate.scrapedAt.slice(0, 10);
+  return new Date(t - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
 function hasPickupChange(r: PickupRow) {
@@ -256,6 +262,11 @@ export default function PickupTable({
     const map = new Map<string, ShopperPaxPrices>();
     if (!activeExtracao) return map;
 
+    // Cruzamento estrito: a extração de pickup do dia D é populada SÓ com a coleta
+    // do shopper do mesmo dia D, casando a noite cotada (checkin_date) com a
+    // diária do pickup (data_referencia). Sem carry-forward de coletas anteriores.
+    // Se a coleta de D veio incompleta, as noites faltantes ficam vazias — isso é
+    // sinal de coleta parcial, não de erro do cruzamento.
     for (const rate of shopperRates) {
       if (rate.type !== 'cliente') continue;
       if (rateScrapeDate(rate) !== activeExtracao) continue;
