@@ -10,3 +10,4 @@ __pycache__/
 .vscode/settings.json
 .idea/
 *.log
+test-results/
